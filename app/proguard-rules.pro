@@ -1,0 +1,3 @@
+-keep class com.recordly.mobile.model.** { *; }
+-keep class com.recordly.mobile.shizuku.** { *; }
+-keepattributes *Annotation*,Signature,InnerClasses,EnclosingMethod

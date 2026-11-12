@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Recordly Mobile</string>
+    <string name="accessibility_service_label">Recordly Keyboard &amp; Click Auto-Detector</string>
+    <string name="accessibility_service_description">Detects when the on-screen keyboard appears so Recordly Mobile can automatically trim or speed up typing sections, and logs UI click targets as an optional fallback when Shizuku mouse tracking is off.</string>
+</resources>
