@@ -1,21 +1,20 @@
 # Recordly Mobile (Android)
 
-An Android screen recorder & AI studio editor powered by **Groq API**, **AndroidX Media3 Transformer**, **Shizuku 60fps Mouse Tracking**, and **Accessibility Keyboard Auto-Trim**.
+An Android screen recorder & AI studio editor powered by **Groq API**, **AndroidX Media3 Transformer**, and **Post-Recording AI Cursor Tracking** — with zero root or Shizuku required.
 
 ## Features Implemented
 - **Screen Capture + Floating Studio Bubble:** `MediaProjection` + `VirtualDisplay` + `MediaRecorder` foreground service with draggable overlay controls (Record / Pause / Stop / Keyboard indicator).
-- **USB-C / Bluetooth Mouse Tracking & Desktop Auto-Zoom:**
+- **Post-Recording Visible Mouse Tracking & Desktop Auto-Zoom:**
   - Real-time physical mouse detection (`InputDevice.SOURCE_MOUSE`).
-  - **Shizuku 60fps Hook (`MouseEventUserService` via AIDL):** Reads `/dev/input/event*` (`getevent -lt`) for exact cursor movement and clicks without root, generating smooth spring-eased zoom-in/out keyframes and a desktop-style pointer + click-ripple overlay.
-  - **Fallback Mode:** Accessibility click-target tracking + Groq Vision cursor hint detection when Shizuku isn't active.
+  - **Zero-Setup Post-Recording Tracker:** Once recording finishes, Recordly scans the recorded frames using local localized-motion detection + **Groq Vision (`qwen/qwen3.8-27b`)** to locate Android's visible mouse cursor, infer clicks/dwells, and generate smooth spring-eased zoom-in/out keyframes and optional click-ripple highlight rings.
 - **Phone Keyboard Auto-Trim:**
   - **Real-time (`RecordlyAccessibilityService`):** Logs exact `[startMs, endMs]` intervals whenever `TYPE_INPUT_METHOD` appears on screen and automatically trims (or speeds up 5x) those sections.
   - **Post-Recording Fallback:** Groq Vision scans sampled frames to catch on-screen keyboards in imported videos too.
 - **Groq AI Suite (Whole-App AI Support):**
   - **Whisper `.srt` + Word Timestamps:** Uses `whisper-large-v3-turbo` (`verbose_json` + `word` & `segment` granularities) to auto-generate `.srt` subtitles, or lets you import your own `.srt` & voiceover audio.
-  - **Vision Keyframe Scanner:** Uses `qwen/qwen3.8-27b` to detect UI context, loading/idle screens, and keyboard visibility.
+  - **Vision Keyframe Scanner:** Uses `qwen/qwen3.8-27b` to locate the visible cursor, detect UI context, loading/idle screens, and keyboard visibility.
   - **AI Director (`llama-3.3-70b-versatile`):** Automatically trims silences/keyboard spans, adjusts segment playback speeds (`0.75x – 5.0x`) to synchronize screen actions with the `.srt` narration, aligns zoom keyframes, and supports natural-language prompt edits.
-- **Hardware-Accelerated Export (`Media3 Transformer 1.11.1`):** Applies `ClippingConfiguration`, `SpeedProvider`, `MatrixTransformation` zoom/pan, and `OverlayEffect` (`BitmapOverlay` cursor + burned-in `.srt` captions) and exports MP4 to `Movies/Recordly` + `.srt` to `Downloads/Recordly`.
+- **Hardware-Accelerated Export (`Media3 Transformer 1.11.1`):** Applies `ClippingConfiguration`, `SpeedProvider`, `MatrixTransformation` zoom/pan, and `OverlayEffect` (`BitmapOverlay` cursor focus ring/ripples + burned-in `.srt` captions) and exports MP4 to `Movies/Recordly` + `.srt` to `Downloads/Recordly`.
 
 ---
 
@@ -46,6 +45,5 @@ The compiled APK will be generated at:
 
 ## App Setup on Phone
 1. Open **Settings** inside the app and paste your **Groq API Key** (`gsk_...`), then tap **Test Key**.
-2. *(Optional for 60fps Mouse Tracking)* Install & start **Shizuku** via Wireless Debugging, then tap the Shizuku tile on the Home screen to grant permission.
-3. *(Optional for instant Keyboard Auto-Trim)* Tap **Enable Keyboard Auto-Detector** on the Home screen to turn on Recordly's Accessibility service.
-4. Connect a USB-C or Bluetooth mouse, tap **Start Recording**, and run **Groq AI Magic Sync** in the Studio Editor when finished.
+2. *(Optional for instant Keyboard Auto-Trim)* Tap **Enable Keyboard Auto-Detector** on the Home screen to turn on Recordly's Accessibility service.
+3. Connect a USB-C or Bluetooth mouse, tap **Start Recording**, and run **Groq AI Magic Sync** in the Studio Editor when finished — all cursor tracking, zoom-in/zoom-out, keyboard cuts, and `.srt` speed syncing happen automatically post-recording.

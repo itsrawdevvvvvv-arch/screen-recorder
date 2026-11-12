@@ -6,7 +6,6 @@ import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Matrix
 import android.graphics.Paint
-import android.graphics.Path
 import android.graphics.RectF
 import android.net.Uri
 import android.os.Handler
@@ -247,23 +246,16 @@ class VideoExportEngine(private val context: Context) {
 
                         if (cam.clickRippleProgress in 0f..1f) {
                             ripplePaint.alpha = ((1f - cam.clickRippleProgress) * 230).toInt().coerceIn(0, 255)
-                            val radius = 16f + cam.clickRippleProgress * 54f
+                            val radius = 18f + cam.clickRippleProgress * 56f
                             canvas.drawCircle(zoomedX, zoomedY, radius, ripplePaint)
                         }
 
-                        // Crisp desktop-style arrow pointer
-                        val pointer = Path().apply {
-                            moveTo(zoomedX, zoomedY)
-                            lineTo(zoomedX, zoomedY + 32f)
-                            lineTo(zoomedX + 9f, zoomedY + 24f)
-                            lineTo(zoomedX + 18f, zoomedY + 38f)
-                            lineTo(zoomedX + 23f, zoomedY + 35f)
-                            lineTo(zoomedX + 14f, zoomedY + 21f)
-                            lineTo(zoomedX + 25f, zoomedY + 21f)
-                            close()
-                        }
-                        canvas.drawPath(pointer, cursorFill)
-                        canvas.drawPath(pointer, cursorStroke)
+                        // Soft focus halo around Android's already-visible recorded mouse cursor
+                        cursorFill.color = Color.argb(45, 108, 92, 231)
+                        canvas.drawCircle(zoomedX, zoomedY, 22f, cursorFill)
+                        cursorStroke.color = Color.argb(190, 0, 210, 160)
+                        cursorStroke.strokeWidth = 3.5f
+                        canvas.drawCircle(zoomedX, zoomedY, 22f, cursorStroke)
                     }
                 }
 

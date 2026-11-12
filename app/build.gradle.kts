@@ -40,7 +40,6 @@ android {
 
     buildFeatures {
         compose = true
-        aidl = true
         buildConfig = true
     }
 
@@ -78,7 +77,5 @@ dependencies {
     implementation(libs.kotlinx.coroutines.android)
     implementation(libs.androidx.datastore.preferences)
 
-    implementation(libs.shizuku.api)
-    implementation(libs.shizuku.provider)
     implementation(libs.guava)
 }

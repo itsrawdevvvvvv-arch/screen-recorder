@@ -137,7 +137,7 @@ data class GroqSettings(
     val keyboardTrimMode: KeyboardTrimMode = KeyboardTrimMode.REMOVE,
     val autoZoomEnabled: Boolean = true,
     val autoAiSyncOnStop: Boolean = false,
-    val mouseSensitivity: Float = 1.0f,
+    val defaultZoomScale: Float = 2.0f,
     val recordInternalAudio: Boolean = true,
     val recordMicrophone: Boolean = true
 )

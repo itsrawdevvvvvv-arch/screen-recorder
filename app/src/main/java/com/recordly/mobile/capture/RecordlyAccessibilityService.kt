@@ -24,19 +24,17 @@ class RecordlyAccessibilityService : AccessibilityService() {
                 checkKeyboardWindow()
             }
             AccessibilityEvent.TYPE_VIEW_CLICKED -> {
-                // Optional fallback when Shizuku isn't tracking raw mouse coordinates
-                if (ShizukuMouseBridge.status.value != ShizukuStatus.TRACKING) {
-                    val src = event.source ?: return
-                    val rect = Rect()
-                    src.getBoundsInScreen(rect)
-                    val dm = resources.displayMetrics
-                    if (!rect.isEmpty && dm.widthPixels > 0 && dm.heightPixels > 0) {
-                        val cx = rect.centerX().toFloat() / dm.widthPixels.toFloat()
-                        val cy = rect.centerY().toFloat() / dm.heightPixels.toFloat()
-                        ActiveSessionTracker.recordMouseSample(cx, cy, isDown = true, isUp = true, button = 1)
-                    }
-                    src.recycle()
+                // Log clicked UI element center bounds as an extra signal alongside post-recording AI cursor tracking
+                val src = event.source ?: return
+                val rect = Rect()
+                src.getBoundsInScreen(rect)
+                val dm = resources.displayMetrics
+                if (!rect.isEmpty && dm.widthPixels > 0 && dm.heightPixels > 0) {
+                    val cx = rect.centerX().toFloat() / dm.widthPixels.toFloat()
+                    val cy = rect.centerY().toFloat() / dm.heightPixels.toFloat()
+                    ActiveSessionTracker.recordMouseSample(cx, cy, isDown = true, isUp = true, button = 1)
                 }
+                src.recycle()
             }
         }
     }

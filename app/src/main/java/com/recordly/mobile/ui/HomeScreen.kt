@@ -70,7 +70,6 @@ import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import com.recordly.mobile.capture.ShizukuStatus
 import com.recordly.mobile.model.RecordingProject
 import com.recordly.mobile.ui.theme.StudioAccent
 import com.recordly.mobile.ui.theme.StudioBg
@@ -100,17 +99,14 @@ fun HomeScreen(
     val context = LocalContext.current
     val projects by viewModel.projects.collectAsStateWithLifecycle()
     val mice by viewModel.connectedMice.collectAsStateWithLifecycle()
-    val shizukuStatus by viewModel.shizukuStatus.collectAsStateWithLifecycle()
-    val shizukuDetail by viewModel.shizukuDetail.collectAsStateWithLifecycle()
     val accessibilityEnabled by viewModel.accessibilityEnabled.collectAsStateWithLifecycle()
     val groqSettings by viewModel.groqSettings.collectAsStateWithLifecycle()
     val isRecording by viewModel.isRecording.collectAsStateWithLifecycle()
     val elapsedMs by viewModel.recordingElapsedMs.collectAsStateWithLifecycle()
 
     var selectedTab by remember { mutableIntStateOf(0) }
-    val shizukuReady = shizukuStatus == ShizukuStatus.READY || shizukuStatus == ShizukuStatus.TRACKING
     val groqReady = groqSettings.apiKey.isNotBlank()
-    val readyCount = listOf(mice.isNotEmpty(), shizukuReady, accessibilityEnabled, groqReady).count { it }
+    val readyCount = listOf(mice.isNotEmpty(), true, accessibilityEnabled, groqReady).count { it }
 
     Scaffold(
         containerColor = StudioBg,
@@ -441,18 +437,12 @@ fun HomeScreen(
 
                     ReadinessTile(
                         icon = Icons.Rounded.Bolt,
-                        title = "60fps Mouse Hook (Shizuku): ${shizukuStatus.name}",
-                        subtitle = shizukuDetail,
-                        badgeText = if (shizukuReady) "READY" else "SETUP",
-                        active = shizukuReady,
+                        title = "Post-Recording AI Cursor Tracker",
+                        subtitle = "Tracks the visible mouse cursor & generates zooms after recording",
+                        badgeText = "READY",
+                        active = true,
                         violetIcon = true,
-                        onClick = {
-                            if (shizukuStatus == ShizukuStatus.PERMISSION_REQUIRED) {
-                                viewModel.requestShizukuPermission()
-                            } else {
-                                viewModel.refreshHardwareAndPermissions()
-                            }
-                        }
+                        onClick = { viewModel.refreshHardwareAndPermissions() }
                     )
 
                     ReadinessTile(

@@ -10,7 +10,6 @@ import com.recordly.mobile.ai.AiPipelineOrchestrator
 import com.recordly.mobile.ai.GroqApiClient
 import com.recordly.mobile.capture.ActiveSessionTracker
 import com.recordly.mobile.capture.RecordlyAccessibilityService
-import com.recordly.mobile.capture.ShizukuMouseBridge
 import com.recordly.mobile.data.SrtCodec
 import com.recordly.mobile.editor.VideoExportEngine
 import com.recordly.mobile.model.AiEditPlan
@@ -51,8 +50,6 @@ class RecordlyViewModel(application: Application) : AndroidViewModel(application
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), GroqSettings())
 
     val connectedMice = app.mouseDeviceMonitor.connectedMice
-    val shizukuStatus = ShizukuMouseBridge.status
-    val shizukuDetail = ShizukuMouseBridge.statusDetail
     val isRecording = ActiveSessionTracker.isRecording
     val recordingElapsedMs = ActiveSessionTracker.elapsedMs
     val lastSavedProjectId = ActiveSessionTracker.lastSavedProjectId
@@ -83,12 +80,7 @@ class RecordlyViewModel(application: Application) : AndroidViewModel(application
 
     fun refreshHardwareAndPermissions() {
         app.mouseDeviceMonitor.refresh()
-        ShizukuMouseBridge.refreshStatus()
         _accessibilityEnabled.value = RecordlyAccessibilityService.isEnabled(app)
-    }
-
-    fun requestShizukuPermission() {
-        ShizukuMouseBridge.requestPermission()
     }
 
     fun loadProject(projectId: String) {

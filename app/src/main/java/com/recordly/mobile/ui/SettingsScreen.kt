@@ -347,20 +347,20 @@ fun SettingsScreen(
                 }
             }
 
-            // 4. Mouse Tracking Sensitivity Card
+            // 4. Auto-Zoom Scale Card
             item {
-                SettingsCard(icon = Icons.Rounded.Mouse, title = "MOUSE TRACKING") {
+                SettingsCard(icon = Icons.Rounded.Mouse, title = "POST-RECORDING AUTO-ZOOM") {
                     Text(
-                        "Mouse Tracking Sensitivity (${"%.1f".format(draft.mouseSensitivity)}x)",
+                        "Default Auto-Zoom Scale (${"%.1f".format(draft.defaultZoomScale)}x)",
                         fontSize = 14.sp,
                         fontWeight = FontWeight.Bold,
                         color = StudioTextPrimary
                     )
                     Spacer(Modifier.height(6.dp))
                     Slider(
-                        value = draft.mouseSensitivity,
-                        onValueChange = { draft = draft.copy(mouseSensitivity = it) },
-                        valueRange = 0.4f..2.5f,
+                        value = draft.defaultZoomScale,
+                        onValueChange = { draft = draft.copy(defaultZoomScale = it) },
+                        valueRange = 1.3f..2.8f,
                         colors = SliderDefaults.colors(
                             thumbColor = Color.White,
                             activeTrackColor = StudioPrimary,
@@ -371,9 +371,9 @@ fun SettingsScreen(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween
                     ) {
-                        Text("0.4x", fontSize = 10.5.sp, fontWeight = FontWeight.Bold, color = StudioTextSecondary)
-                        Text("1.0x", fontSize = 10.5.sp, fontWeight = FontWeight.Bold, color = StudioTextSecondary)
-                        Text("2.5x", fontSize = 10.5.sp, fontWeight = FontWeight.Bold, color = StudioTextSecondary)
+                        Text("1.3x", fontSize = 10.5.sp, fontWeight = FontWeight.Bold, color = StudioTextSecondary)
+                        Text("2.0x", fontSize = 10.5.sp, fontWeight = FontWeight.Bold, color = StudioTextSecondary)
+                        Text("2.8x", fontSize = 10.5.sp, fontWeight = FontWeight.Bold, color = StudioTextSecondary)
                     }
                 }
             }

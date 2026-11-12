@@ -56,13 +56,18 @@ class AiPipelineOrchestrator(
             srtPath = srtFile.absolutePath
         }
 
-        // Step 3: Groq Vision keyframe inspection (keyboard + UI context + cursor fallback)
-        _progress.value = AiPipelineProgress(true, "Groq Vision analyzing keyframes & keyboard…", 0.60f)
+        // Step 3: Post-recording visible cursor tracking + Groq Vision keyframe inspection
+        _progress.value = AiPipelineProgress(true, "Tracking visible cursor & scanning keyframes…", 0.55f)
+        val localCursorSamples = VisualAnalyzer.trackVisibleCursorMotion(
+            videoPath = project.videoPath,
+            durationMs = project.durationMs
+        )
         val keyframes = VisualAnalyzer.extractSmartKeyframes(
             videoPath = project.videoPath,
             durationMs = project.durationMs,
-            mouseSamples = project.mouseSamples
+            mouseSamples = localCursorSamples.ifEmpty { project.mouseSamples }
         )
+        _progress.value = AiPipelineProgress(true, "Groq Vision locating cursor, clicks & keyboard…", 0.68f)
         val visionInsights = groqClient.analyzeKeyframesWithVision(
             apiKey = settings.apiKey,
             visionModel = settings.visionModel,
@@ -75,11 +80,11 @@ class AiPipelineOrchestrator(
             totalDurationMs = project.durationMs
         )
 
-        val effectiveMouseSamples = if (project.mouseSamples.isNotEmpty()) {
-            project.mouseSamples
-        } else {
-            VisualAnalyzer.fallbackMouseSamplesFromVision(visionInsights)
-        }
+        val effectiveMouseSamples = VisualAnalyzer.fusePostRecordingCursorSamples(
+            visionInsights = visionInsights,
+            localMotionSamples = localCursorSamples,
+            existingSamples = project.mouseSamples
+        )
 
         // Step 4: Groq LLM AI Director builds audio-synced trim, speed & zoom plan
         _progress.value = AiPipelineProgress(true, "Groq AI Director syncing speed, trims & zooms…", 0.85f)
@@ -98,7 +103,7 @@ class AiPipelineOrchestrator(
             AutoZoomGenerator.generateFromMouse(
                 samples = effectiveMouseSamples,
                 totalDurationMs = project.durationMs,
-                defaultZoom = project.styleConfig.defaultZoomScale
+                defaultZoom = settings.defaultZoomScale
             )
         } else {
             aiPlan.zoomKeyframes

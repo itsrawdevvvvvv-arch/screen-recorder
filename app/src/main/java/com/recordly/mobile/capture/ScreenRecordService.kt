@@ -174,15 +174,8 @@ class ScreenRecordService : Service() {
                 ActiveSessionTracker.beginSession()
                 recorder.start()
 
-                ShizukuMouseBridge.startTracking(
-                    context = this@ScreenRecordService,
-                    screenWidth = metrics.widthPixels,
-                    screenHeight = metrics.heightPixels,
-                    sensitivity = settings.mouseSensitivity
-                )
-
                 startTicker()
-                updateNotification("Recording active • Mouse & Keyboard tracked")
+                updateNotification("Recording active • Cursor & Keyboard ready")
             } catch (e: Exception) {
                 e.printStackTrace()
                 cleanupMedia()
@@ -203,7 +196,6 @@ class ScreenRecordService : Service() {
 
     private fun stopAndFinalizeRecording() {
         tickerJob?.cancel()
-        ShizukuMouseBridge.stopTracking()
         stopService(Intent(this, FloatingControlService::class.java))
 
         val (elapsedDuration, mouseSamples, keyboardIntervals) = ActiveSessionTracker.endSession()
@@ -222,7 +214,7 @@ class ScreenRecordService : Service() {
             val meta = app.projectRepository.readVideoMetadata(file.absolutePath)
             val actualDuration = if (meta.durationMs > 0L) meta.durationMs else elapsedDuration
             val settings = app.settingsRepository.getGroqSettings()
-            val style = app.settingsRepository.getCanvasStyle()
+            val style = app.settingsRepository.getCanvasStyle().copy(defaultZoomScale = settings.defaultZoomScale)
 
             val autoZooms = if (settings.autoZoomEnabled && mouseSamples.isNotEmpty()) {
                 AutoZoomGenerator.generateFromMouse(

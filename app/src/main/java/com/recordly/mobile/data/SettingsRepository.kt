@@ -29,7 +29,7 @@ class SettingsRepository(private val context: Context) {
         val KEYBOARD_TRIM_MODE = stringPreferencesKey("keyboard_trim_mode")
         val AUTO_ZOOM_ENABLED = booleanPreferencesKey("auto_zoom_enabled")
         val AUTO_AI_SYNC = booleanPreferencesKey("auto_ai_sync_on_stop")
-        val MOUSE_SENSITIVITY = floatPreferencesKey("mouse_sensitivity")
+        val DEFAULT_ZOOM_SCALE = floatPreferencesKey("default_zoom_scale")
         val RECORD_INTERNAL_AUDIO = booleanPreferencesKey("record_internal_audio")
         val RECORD_MIC = booleanPreferencesKey("record_microphone")
         val CANVAS_STYLE_JSON = stringPreferencesKey("canvas_style_json")
@@ -48,7 +48,7 @@ class SettingsRepository(private val context: Context) {
             keyboardTrimMode = mode,
             autoZoomEnabled = prefs[Keys.AUTO_ZOOM_ENABLED] ?: true,
             autoAiSyncOnStop = prefs[Keys.AUTO_AI_SYNC] ?: false,
-            mouseSensitivity = prefs[Keys.MOUSE_SENSITIVITY] ?: 1.0f,
+            defaultZoomScale = prefs[Keys.DEFAULT_ZOOM_SCALE] ?: 2.0f,
             recordInternalAudio = prefs[Keys.RECORD_INTERNAL_AUDIO] ?: true,
             recordMicrophone = prefs[Keys.RECORD_MIC] ?: true
         )
@@ -73,7 +73,7 @@ class SettingsRepository(private val context: Context) {
             prefs[Keys.KEYBOARD_TRIM_MODE] = settings.keyboardTrimMode.name
             prefs[Keys.AUTO_ZOOM_ENABLED] = settings.autoZoomEnabled
             prefs[Keys.AUTO_AI_SYNC] = settings.autoAiSyncOnStop
-            prefs[Keys.MOUSE_SENSITIVITY] = settings.mouseSensitivity.coerceIn(0.3f, 3.0f)
+            prefs[Keys.DEFAULT_ZOOM_SCALE] = settings.defaultZoomScale.coerceIn(1.3f, 2.8f)
             prefs[Keys.RECORD_INTERNAL_AUDIO] = settings.recordInternalAudio
             prefs[Keys.RECORD_MIC] = settings.recordMicrophone
         }
