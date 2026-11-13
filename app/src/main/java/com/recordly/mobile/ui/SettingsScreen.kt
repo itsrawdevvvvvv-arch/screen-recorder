@@ -535,6 +535,17 @@ fun SettingsScreen(
                     }
                 }
             }
+
+            item {
+                Text(
+                    text = "Recordly Mobile v" + com.recordly.mobile.BuildConfig.VERSION_NAME +
+                        " (build " + com.recordly.mobile.BuildConfig.VERSION_CODE + ")",
+                    fontSize = 11.sp,
+                    color = StudioTextSecondary,
+                    textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                    modifier = Modifier.fillMaxWidth().padding(top = 4.dp, bottom = 16.dp)
+                )
+            }
         }
     }
 }
