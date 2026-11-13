@@ -108,6 +108,7 @@ import com.recordly.mobile.ui.theme.StudioTextPrimary
 import com.recordly.mobile.ui.theme.StudioTextSecondary
 import com.recordly.mobile.ui.theme.StudioWarning
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
 import java.io.File
 
 @OptIn(ExperimentalMaterial3Api::class)
