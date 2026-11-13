@@ -11,6 +11,7 @@ import com.recordly.mobile.model.MouseSample
 import com.recordly.mobile.model.SegmentAction
 import com.recordly.mobile.model.SrtCue
 import com.recordly.mobile.model.TimeInterval
+import com.recordly.mobile.model.TimestampedImage
 import com.recordly.mobile.model.WordTimestamp
 import com.recordly.mobile.model.ZoomKeyframe
 import com.recordly.mobile.model.ZoomSource
@@ -35,10 +36,6 @@ import java.io.File
 import java.util.UUID
 import java.util.concurrent.TimeUnit
 
-data class TimestampedImage(
-    val timestampMs: Long,
-    val jpegBytes: ByteArray
-)
 
 data class TranscriptionResult(
     val fullText: String,

@@ -12,6 +12,7 @@ import android.hardware.display.VirtualDisplay
 import android.media.MediaRecorder
 import android.media.projection.MediaProjection
 import android.media.projection.MediaProjectionManager
+import android.net.Uri
 import android.os.Build
 import android.os.IBinder
 import android.util.DisplayMetrics
@@ -21,6 +22,7 @@ import com.recordly.mobile.MainActivity
 import com.recordly.mobile.R
 import com.recordly.mobile.RecordlyApp
 import com.recordly.mobile.editor.AutoZoomGenerator
+import com.recordly.mobile.editor.ZoomPipeline
 import com.recordly.mobile.model.AiEditPlan
 import com.recordly.mobile.model.EditSegment
 import com.recordly.mobile.model.RecordingProject
@@ -172,6 +174,7 @@ class ScreenRecordService : Service() {
                 )
 
                 ActiveSessionTracker.beginSession()
+                ClickLog.begin()
                 recorder.start()
 
                 startTicker()
@@ -198,7 +201,8 @@ class ScreenRecordService : Service() {
         tickerJob?.cancel()
         stopService(Intent(this, FloatingControlService::class.java))
 
-        val (elapsedDuration, mouseSamples, keyboardIntervals) = ActiveSessionTracker.endSession()
+        val a11yClicks = ClickLog.end()
+        val (elapsedDuration, _, keyboardIntervals) = ActiveSessionTracker.endSession()
         cleanupMedia()
 
         val file = currentOutputFile
@@ -216,13 +220,20 @@ class ScreenRecordService : Service() {
             val settings = app.settingsRepository.getGroqSettings()
             val style = app.settingsRepository.getCanvasStyle().copy(defaultZoomScale = settings.defaultZoomScale)
 
-            val autoZooms = if (settings.autoZoomEnabled && mouseSamples.isNotEmpty()) {
-                AutoZoomGenerator.generateFromMouse(
-                    samples = mouseSamples,
-                    totalDurationMs = actualDuration,
-                    defaultZoom = style.defaultZoomScale
-                )
-            } else emptyList()
+            updateNotification("Analyzing cursor & generating auto-zoom…")
+            val zoomResult = if (settings.autoZoomEnabled) {
+                runCatching {
+                    ZoomPipeline.run(
+                        context = applicationContext,
+                        videoUri = Uri.fromFile(file),
+                        accessibilityClicks = a11yClicks,
+                        clockOffsetMs = 0L
+                    )
+                }.getOrNull()
+            } else null
+
+            val finalMouseSamples = zoomResult?.mouseSamples ?: emptyList()
+            val autoZooms = zoomResult?.zoomKeyframes ?: emptyList()
 
             val initialSegments = AutoZoomGenerator.buildInitialSegmentsWithKeyboard(
                 durationMs = actualDuration,
@@ -239,10 +250,10 @@ class ScreenRecordService : Service() {
                 width = meta.width,
                 height = meta.height,
                 videoPath = file.absolutePath,
-                mouseSamples = mouseSamples,
+                mouseSamples = finalMouseSamples,
                 keyboardIntervals = keyboardIntervals,
                 editPlan = AiEditPlan(
-                    summary = "Recorded ${actualDuration / 1000}s • ${mouseSamples.count { it.isDown }} clicks • ${keyboardIntervals.size} keyboard spans",
+                    summary = "Recorded ${actualDuration / 1000}s • ${autoZooms.size} zoom keyframes • ${keyboardIntervals.size} keyboard spans",
                     segments = initialSegments.ifEmpty {
                         listOf(EditSegment(0L, actualDuration, 1.0f, SegmentAction.KEEP, "Full recording"))
                     },

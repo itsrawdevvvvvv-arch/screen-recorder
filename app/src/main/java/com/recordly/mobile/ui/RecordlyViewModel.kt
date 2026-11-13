@@ -42,7 +42,7 @@ class RecordlyViewModel(application: Application) : AndroidViewModel(application
     private val projectRepo = app.projectRepository
     private val settingsRepo = app.settingsRepository
     private val groqClient = GroqApiClient()
-    private val orchestrator = AiPipelineOrchestrator(projectRepo, settingsRepo, groqClient)
+    private val orchestrator = AiPipelineOrchestrator(application, projectRepo, settingsRepo, groqClient)
     private val exportEngine = VideoExportEngine(application)
 
     val projects = projectRepo.projects

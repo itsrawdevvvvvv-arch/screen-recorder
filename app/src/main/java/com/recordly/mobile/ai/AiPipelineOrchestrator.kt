@@ -1,5 +1,7 @@
 package com.recordly.mobile.ai
 
+import android.content.Context
+import android.net.Uri
 import com.recordly.mobile.data.ProjectRepository
 import com.recordly.mobile.data.SettingsRepository
 import com.recordly.mobile.data.SrtCodec
@@ -19,6 +21,7 @@ data class AiPipelineProgress(
 )
 
 class AiPipelineOrchestrator(
+    private val context: Context,
     private val projectRepository: ProjectRepository,
     private val settingsRepository: SettingsRepository,
     private val groqClient: GroqApiClient = GroqApiClient()
@@ -58,11 +61,17 @@ class AiPipelineOrchestrator(
 
         // Step 3: Post-recording visible cursor tracking + Groq Vision keyframe inspection
         _progress.value = AiPipelineProgress(true, "Tracking visible cursor & scanning keyframes…", 0.55f)
-        val localCursorSamples = VisualAnalyzer.trackVisibleCursorMotion(
-            videoPath = project.videoPath,
-            durationMs = project.durationMs
+        val analyzer = VisualAnalyzer()
+        val videoUri = Uri.fromFile(File(project.videoPath))
+        val analysis = analyzer.analyze(
+            context = context,
+            videoUri = videoUri,
+            onProgress = { p ->
+                _progress.value = AiPipelineProgress(true, "Analyzing video frames for cursor…", 0.55f + p * 0.12f)
+            }
         )
-        val keyframes = VisualAnalyzer.extractSmartKeyframes(
+        val localCursorSamples = analyzer.fuse(analysis, emptyList())
+        val keyframes = analyzer.extractSmartKeyframes(
             videoPath = project.videoPath,
             durationMs = project.durationMs,
             mouseSamples = localCursorSamples.ifEmpty { project.mouseSamples }
@@ -74,17 +83,13 @@ class AiPipelineOrchestrator(
             frames = keyframes
         )
 
-        val mergedKeyboardIntervals = VisualAnalyzer.mergeKeyboardIntervals(
+        val mergedKeyboardIntervals = analyzer.mergeKeyboardIntervals(
             accessibilityIntervals = project.keyboardIntervals,
             visionInsights = visionInsights,
             totalDurationMs = project.durationMs
         )
 
-        val effectiveMouseSamples = VisualAnalyzer.fusePostRecordingCursorSamples(
-            visionInsights = visionInsights,
-            localMotionSamples = localCursorSamples,
-            existingSamples = project.mouseSamples
-        )
+        val effectiveMouseSamples = localCursorSamples.ifEmpty { project.mouseSamples }
 
         // Step 4: Groq LLM AI Director builds audio-synced trim, speed & zoom plan
         _progress.value = AiPipelineProgress(true, "Groq AI Director syncing speed, trims & zooms…", 0.85f)
@@ -98,15 +103,16 @@ class AiPipelineOrchestrator(
             frameInsights = visionInsights
         )
 
-        // Blend hardware mouse zoom clusters if AI returned sparse zooms
-        val combinedZooms = if (aiPlan.zoomKeyframes.isEmpty() && effectiveMouseSamples.isNotEmpty()) {
-            AutoZoomGenerator.generateFromMouse(
+        // Blend auto zoom clusters if AI returned sparse zooms
+        val combinedZooms = if (aiPlan.zoomKeyframes.isEmpty() && (effectiveMouseSamples.isNotEmpty() || analysis.hotspots.isNotEmpty())) {
+            AutoZoomGenerator.generate(
                 samples = effectiveMouseSamples,
-                totalDurationMs = project.durationMs,
-                defaultZoom = settings.defaultZoomScale
+                hotspots = analysis.hotspots,
+                durationMs = project.durationMs,
+                cursorReliable = analysis.cursorReliable
             )
         } else {
-            aiPlan.zoomKeyframes
+            AutoZoomGenerator.sanitize(aiPlan.zoomKeyframes, project.durationMs)
         }
 
         val finalPlan = aiPlan.copy(zoomKeyframes = combinedZooms)

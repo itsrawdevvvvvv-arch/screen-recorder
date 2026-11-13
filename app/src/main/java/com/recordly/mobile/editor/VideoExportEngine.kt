@@ -12,7 +12,10 @@ import android.os.Handler
 import android.os.Looper
 import androidx.annotation.OptIn
 import androidx.media3.common.C
+import androidx.media3.common.Effect
 import androidx.media3.common.MediaItem
+import androidx.media3.common.MimeTypes
+import androidx.media3.common.audio.AudioProcessor
 import androidx.media3.common.audio.SpeedProvider
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.effect.BitmapOverlay
@@ -20,26 +23,81 @@ import androidx.media3.effect.MatrixTransformation
 import androidx.media3.effect.OverlayEffect
 import androidx.media3.effect.TextureOverlay
 import androidx.media3.transformer.Composition
+import androidx.media3.transformer.DefaultEncoderFactory
 import androidx.media3.transformer.EditedMediaItem
 import androidx.media3.transformer.EditedMediaItemSequence
 import androidx.media3.transformer.Effects
 import androidx.media3.transformer.ExportException
 import androidx.media3.transformer.ExportResult
+import androidx.media3.transformer.ProgressHolder
 import androidx.media3.transformer.Transformer
+import androidx.media3.transformer.VideoEncoderSettings
 import com.google.common.collect.ImmutableList
 import com.recordly.mobile.data.SrtCodec
 import com.recordly.mobile.model.EditSegment
 import com.recordly.mobile.model.RecordingProject
 import com.recordly.mobile.model.SegmentAction
 import com.recordly.mobile.model.SrtCue
+import com.recordly.mobile.model.ZoomKeyframe
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlinx.coroutines.withContext
 import java.io.File
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
 
+@UnstableApi
 class VideoExportEngine(private val context: Context) {
 
-    @OptIn(UnstableApi::class)
+    /** Range of the ORIGINAL recording that is kept (everything else is cut). */
+    data class KeepSegment(val startMs: Long, val endMs: Long)
+
+    /** Output (post-cut) time → original recording time. */
+    class SegmentTimeMap(private val segments: List<KeepSegment>) {
+        fun outputToOriginalMs(outputMs: Long): Long {
+            var remaining = outputMs.coerceAtLeast(0L)
+            for (s in segments) {
+                val len = s.endMs - s.startMs
+                if (remaining < len) return s.startMs + remaining
+                remaining -= len
+            }
+            return segments.lastOrNull()?.endMs ?: outputMs
+        }
+    }
+
+    companion object {
+        /**
+         * Exact camera matrix for Media3's MatrixTransformation (NDC, [-1,1], y up, frame = [-1,1]²):
+         *
+         *   g  = (2·fx − 1, 1 − 2·fy)         focus in NDC
+         *   p' = S · (p − g)                  focus → (0,0), uniform scale S
+         *      = S·p + (−S·gx, −S·gy)
+         *
+         * Focus is clamped to [0.5/S, 1 − 0.5/S] ⇒ |g| ≤ 1 − 1/S ⇒ the frame edge never enters the viewport.
+         */
+        fun buildZoomMatrix(view: ZoomView): Matrix {
+            val m = Matrix()
+            if (view.scale <= 1.001f) return m
+            val t = CameraMath.ndcTransform(view.scale, view.focusX, view.focusY)
+            m.setScale(t.scale, t.scale)
+            m.postTranslate(t.tx, t.ty)
+            return m
+        }
+
+        fun createZoomEffect(
+            zoomKeyframes: List<ZoomKeyframe>,
+            outputToOriginalMs: (Long) -> Long
+        ): MatrixTransformation = MatrixTransformation { presentationTimeUs ->
+            val originalMs = outputToOriginalMs(presentationTimeUs / 1000L)
+            buildZoomMatrix(AutoZoomGenerator.evaluateView(originalMs, zoomKeyframes))
+        }
+    }
+
     suspend fun exportProject(
         project: RecordingProject,
         outputMp4: File,
@@ -89,31 +147,12 @@ class VideoExportEngine(private val context: Context) {
 
                 val zoomKeyframes = project.editPlan?.zoomKeyframes ?: emptyList()
 
-                // Global smooth mouse-tracking zoom & pan MatrixTransformation across output timeline
-                val zoomMatrixEffect = MatrixTransformation { presentationTimeUs ->
-                    val outputMs = presentationTimeUs / 1000L
-                    val origMs = SrtCodec.outputTimeToOriginalTimeMs(outputMs, keepSegments)
-                    val cam = AutoZoomGenerator.evaluateCameraAt(
-                        originalTimeMs = origMs,
-                        zoomKeyframes = zoomKeyframes,
-                        mouseSamples = project.mouseSamples
-                    )
-
-                    val matrix = Matrix()
-                    if (cam.scale > 1.001f) {
-                        // Normalized GL coordinates [-1..1] where +Y is up, screen Y is top-down
-                        val glFocusX = (cam.focusX * 2f - 1f)
-                        val glFocusY = (1f - cam.focusY * 2f)
-                        val maxPan = (cam.scale - 1f)
-                        val tx = (-glFocusX * maxPan).coerceIn(-maxPan, maxPan)
-                        val ty = (-glFocusY * maxPan).coerceIn(-maxPan, maxPan)
-                        matrix.postScale(cam.scale, cam.scale)
-                        matrix.postTranslate(tx, ty)
-                    }
-                    matrix
+                // Global mathematically-exact camera centering MatrixTransformation
+                val zoomMatrixEffect = createZoomEffect(zoomKeyframes) { outMs ->
+                    SrtCodec.outputTimeToOriginalTimeMs(outMs, keepSegments)
                 }
 
-                // Dynamic BitmapOverlay for desktop cursor, click ripples, and .srt captions
+                // Dynamic BitmapOverlay for cursor halo, click ripples, and .srt captions
                 val overlayW = project.width.coerceIn(480, 1080)
                 val overlayH = project.height.coerceIn(480, 1920)
                 val overlayBitmap = Bitmap.createBitmap(overlayW, overlayH, Bitmap.Config.ARGB_8888)
@@ -165,7 +204,7 @@ class VideoExportEngine(private val context: Context) {
 
                 transformer.start(composition, outputMp4.absolutePath)
 
-                val progressHolder = androidx.media3.transformer.ProgressHolder()
+                val progressHolder = ProgressHolder()
                 val poller = object : Runnable {
                     override fun run() {
                         if (!cont.isActive) return
@@ -189,7 +228,83 @@ class VideoExportEngine(private val context: Context) {
         }
     }
 
-    @OptIn(UnstableApi::class)
+    suspend fun export(
+        inputUri: Uri,
+        outputFile: File,
+        videoDurationMs: Long,
+        keepSegments: List<KeepSegment> = emptyList(),
+        zoomKeyframes: List<ZoomKeyframe>,
+        videoBitrate: Int = 12_000_000,
+        onProgress: (Float) -> Unit = {}
+    ): File = withContext(Dispatchers.Main) {
+        val segments = keepSegments.ifEmpty { listOf(KeepSegment(0L, videoDurationMs)) }
+        val timeMap = SegmentTimeMap(segments)
+        val zoomEffect = createZoomEffect(zoomKeyframes, timeMap::outputToOriginalMs)
+
+        val items = segments.map { seg ->
+            val mediaItem = MediaItem.Builder()
+                .setUri(inputUri)
+                .setClippingConfiguration(
+                    MediaItem.ClippingConfiguration.Builder()
+                        .setStartPositionMs(seg.startMs)
+                        .setEndPositionMs(seg.endMs)
+                        .build()
+                )
+                .build()
+            EditedMediaItem.Builder(mediaItem).build()
+        }
+        val sequence = EditedMediaItemSequence.Builder(items).build()
+
+        val composition = Composition.Builder(sequence)
+            .setEffects(Effects(emptyList<AudioProcessor>(), listOf<Effect>(zoomEffect)))
+            .build()
+
+        if (outputFile.exists()) outputFile.delete()
+        val done = CompletableDeferred<File>()
+
+        val encoderFactory = DefaultEncoderFactory.Builder(context)
+            .setRequestedVideoEncoderSettings(VideoEncoderSettings.Builder().setBitrate(videoBitrate).build())
+            .setEnableFallback(true)
+            .build()
+
+        val transformer = Transformer.Builder(context)
+            .setVideoMimeType(MimeTypes.VIDEO_H264)
+            .setEncoderFactory(encoderFactory)
+            .addListener(object : Transformer.Listener {
+                override fun onCompleted(composition: Composition, exportResult: ExportResult) {
+                    done.complete(outputFile)
+                }
+
+                override fun onError(
+                    composition: Composition,
+                    exportResult: ExportResult,
+                    exportException: ExportException
+                ) {
+                    done.completeExceptionally(exportException)
+                }
+            })
+            .build()
+
+        val progressJob = launch {
+            val holder = ProgressHolder()
+            while (isActive) {
+                if (transformer.getProgress(holder) == Transformer.PROGRESS_STATE_AVAILABLE) {
+                    onProgress(holder.progress / 100f)
+                }
+                delay(200L)
+            }
+        }
+        try {
+            transformer.start(composition, outputFile.absolutePath)
+            done.await()
+        } catch (e: CancellationException) {
+            transformer.cancel()
+            throw e
+        } finally {
+            progressJob.cancel()
+        }
+    }
+
     private fun createStudioOverlay(
         bitmap: Bitmap,
         canvas: Canvas,
@@ -240,7 +355,6 @@ class VideoExportEngine(private val context: Context) {
                     val cx = cam.cursorX
                     val cy = cam.cursorY
                     if (cx != null && cy != null) {
-                        // Transform normalized cursor coordinates through active camera zoom so pointer tracks accurately
                         val zoomedX = (0.5f + (cx - cam.focusX) * cam.scale).coerceIn(0f, 1f) * width
                         val zoomedY = (0.5f + (cy - cam.focusY) * cam.scale).coerceIn(0f, 1f) * height
 
@@ -250,7 +364,7 @@ class VideoExportEngine(private val context: Context) {
                             canvas.drawCircle(zoomedX, zoomedY, radius, ripplePaint)
                         }
 
-                        // Soft focus halo around Android's already-visible recorded mouse cursor
+                        // Soft focus halo around recorded mouse cursor
                         cursorFill.color = Color.argb(45, 108, 92, 231)
                         canvas.drawCircle(zoomedX, zoomedY, 22f, cursorFill)
                         cursorStroke.color = Color.argb(190, 0, 210, 160)

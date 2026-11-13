@@ -40,14 +40,91 @@ enum class AspectRatioPreset {
 }
 
 @Serializable
-data class MouseSample(
-    val timestampMs: Long,
-    val xNorm: Float,
-    val yNorm: Float,
-    val isDown: Boolean = false,
-    val isUp: Boolean = false,
-    val button: Int = 0
+data class FocusWaypoint(
+    val timeMs: Long,
+    val x: Float,
+    val y: Float
 )
+
+/** All coordinates are normalized [0..1], origin top-left, y down. */
+@Serializable
+data class MouseSample(
+    val timeMs: Long,
+    val x: Float,
+    val y: Float,
+    val isClick: Boolean = false,
+    val confidence: Float = 1f,
+    val source: Source = Source.VISUAL
+) {
+    @Serializable
+    enum class Source { VISUAL, ACCESSIBILITY, FUSED, INFERRED }
+
+    constructor(
+        timestampMs: Long,
+        xNorm: Float,
+        yNorm: Float,
+        isDown: Boolean = false,
+        isUp: Boolean = false,
+        button: Int = 0
+    ) : this(
+        timeMs = timestampMs,
+        x = xNorm,
+        y = yNorm,
+        isClick = isDown,
+        confidence = 1f,
+        source = Source.VISUAL
+    )
+
+    // Compatibility accessors for UI and older callers
+    val timestampMs: Long get() = timeMs
+    val xNorm: Float get() = x
+    val yNorm: Float get() = y
+    val isDown: Boolean get() = isClick
+    val isUp: Boolean get() = false
+    val button: Int get() = if (isClick) 1 else 0
+}
+
+data class CameraState(
+    val scale: Float,
+    val focusX: Float,   // already clamped for [scale]
+    val focusY: Float,   // already clamped for [scale]
+    val cursorX: Float?,
+    val cursorY: Float?,
+    /** 0 = no ripple active, 0.01..1.0 = progress of the most recent click ripple. */
+    val clickRippleProgress: Float
+)
+
+data class ActivityHotspot(
+    val timeMs: Long,
+    val x: Float,
+    val y: Float,
+    val strength: Float
+)
+
+data class AccessibilityClick(
+    val timeMs: Long,
+    val x: Float?,
+    val y: Float?
+)
+
+data class TimestampedImage(
+    val timestampMs: Long,
+    val jpegBytes: ByteArray
+) {
+    override fun equals(other: Any?): Boolean {
+        if (this === other) return true
+        if (javaClass != other?.javaClass) return false
+        other as TimestampedImage
+        if (timestampMs != other.timestampMs) return false
+        return jpegBytes.contentEquals(other.jpegBytes)
+    }
+
+    override fun hashCode(): Int {
+        var result = timestampMs.hashCode()
+        result = 31 * result + jpegBytes.contentHashCode()
+        return result
+    }
+}
 
 @Serializable
 data class TimeInterval(
@@ -59,14 +136,15 @@ data class TimeInterval(
 
 @Serializable
 data class ZoomKeyframe(
-    val id: String,
     val startMs: Long,
     val endMs: Long,
-    val focusX: Float,
-    val focusY: Float,
     val zoomScale: Float = 2.0f,
-    val easeInMs: Long = 380L,
-    val easeOutMs: Long = 420L,
+    val focusX: Float = 0.5f,
+    val focusY: Float = 0.5f,
+    val easeInMs: Long = 350L,
+    val easeOutMs: Long = 400L,
+    val waypoints: List<FocusWaypoint> = emptyList(),
+    val id: String = java.util.UUID.randomUUID().toString(),
     val source: ZoomSource = ZoomSource.MOUSE,
     val note: String = ""
 )

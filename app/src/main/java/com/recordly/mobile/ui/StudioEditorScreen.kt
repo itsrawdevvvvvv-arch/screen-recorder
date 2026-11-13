@@ -1,6 +1,7 @@
 package com.recordly.mobile.ui
 
 import android.net.Uri
+import android.view.TextureView
 import android.view.ViewGroup
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
@@ -57,7 +58,9 @@ import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -65,6 +68,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -82,10 +86,15 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.media3.common.MediaItem
+import androidx.media3.common.Player
+import androidx.media3.common.VideoSize
 import androidx.media3.exoplayer.ExoPlayer
-import androidx.media3.ui.PlayerView
 import com.recordly.mobile.editor.AutoZoomGenerator
+import com.recordly.mobile.editor.CameraMath
+import com.recordly.mobile.model.CameraState
+import com.recordly.mobile.model.MouseSample
 import com.recordly.mobile.model.SegmentAction
+import com.recordly.mobile.model.ZoomKeyframe
 import com.recordly.mobile.model.ZoomSource
 import com.recordly.mobile.ui.theme.StudioAccent
 import com.recordly.mobile.ui.theme.StudioBg
@@ -140,7 +149,10 @@ fun StudioEditorScreen(
     }
 
     DisposableEffect(exoPlayer) {
-        onDispose { exoPlayer.release() }
+        onDispose {
+            exoPlayer.setVideoTextureView(null)
+            exoPlayer.release()
+        }
     }
 
     LaunchedEffect(exoPlayer) {
@@ -299,47 +311,47 @@ fun StudioEditorScreen(
                             .aspectRatio(aspect)
                             .clip(RoundedCornerShape(14.dp))
                     ) {
-                        AndroidView(
+                        val t = CameraMath.ndcTransform(camState.scale, camState.focusX, camState.focusY)
+                        Box(
                             modifier = Modifier
                                 .fillMaxSize()
                                 .graphicsLayer {
-                                    scaleX = camState.scale
-                                    scaleY = camState.scale
-                                    transformOrigin = TransformOrigin(camState.focusX, camState.focusY)
-                                },
-                            factory = { ctx ->
-                                PlayerView(ctx).apply {
-                                    player = exoPlayer
-                                    useController = false
-                                    layoutParams = ViewGroup.LayoutParams(
-                                        ViewGroup.LayoutParams.MATCH_PARENT,
-                                        ViewGroup.LayoutParams.MATCH_PARENT
-                                    )
+                                    transformOrigin = TransformOrigin.Center
+                                    scaleX = t.scale
+                                    scaleY = t.scale
+                                    translationX = t.pixelTranslationX(size.width)
+                                    translationY = t.pixelTranslationY(size.height)
                                 }
-                            }
-                        )
-
-                        if (currentProject.styleConfig.showCursorRing && camState.cursorX != null && camState.cursorY != null) {
-                            Canvas(
-                                modifier = Modifier
-                                    .fillMaxSize()
-                                    .graphicsLayer {
-                                        scaleX = camState.scale
-                                        scaleY = camState.scale
-                                        transformOrigin = TransformOrigin(camState.focusX, camState.focusY)
+                        ) {
+                            AndroidView(
+                                modifier = Modifier.fillMaxSize(),
+                                factory = { ctx ->
+                                    TextureView(ctx).apply {
+                                        layoutParams = ViewGroup.LayoutParams(
+                                            ViewGroup.LayoutParams.MATCH_PARENT,
+                                            ViewGroup.LayoutParams.MATCH_PARENT
+                                        )
                                     }
-                            ) {
-                                val pt = Offset(camState.cursorX * size.width, camState.cursorY * size.height)
-                                if (camState.clickRippleProgress in 0f..1f) {
-                                    drawCircle(
-                                        color = StudioPrimary.copy(alpha = 1f - camState.clickRippleProgress),
-                                        radius = 12f + camState.clickRippleProgress * 36f,
-                                        center = pt,
-                                        style = Stroke(width = 4f)
-                                    )
+                                },
+                                update = { textureView ->
+                                    exoPlayer.setVideoTextureView(textureView)
                                 }
-                                drawCircle(color = Color.White, radius = 8f, center = pt)
-                                drawCircle(color = StudioPrimary, radius = 8f, center = pt, style = Stroke(width = 3f))
+                            )
+
+                            if (currentProject.styleConfig.showCursorRing && camState.cursorX != null && camState.cursorY != null) {
+                                Canvas(modifier = Modifier.fillMaxSize()) {
+                                    val pt = Offset(camState.cursorX * size.width, camState.cursorY * size.height)
+                                    if (camState.clickRippleProgress in 0f..1f) {
+                                        drawCircle(
+                                            color = StudioPrimary.copy(alpha = 1f - camState.clickRippleProgress),
+                                            radius = 12f + camState.clickRippleProgress * 36f,
+                                            center = pt,
+                                            style = Stroke(width = 4f)
+                                        )
+                                    }
+                                    drawCircle(color = Color.White, radius = 8f, center = pt)
+                                    drawCircle(color = StudioPrimary, radius = 8f, center = pt, style = Stroke(width = 3f))
+                                }
                             }
                         }
 
@@ -948,5 +960,93 @@ private fun LegendDot(color: Color, label: String) {
         Box(Modifier.size(8.dp).clip(RoundedCornerShape(3.dp)).background(color))
         Spacer(Modifier.width(5.dp))
         Text(label, fontSize = 10.5.sp, fontWeight = FontWeight.SemiBold, color = StudioTextSecondary)
+    }
+}
+
+/**
+ * Standalone live preview composable matching Claude's integration spec.
+ * Uses the exact same NdcTransform mathematics as the Media3 export.
+ */
+@Composable
+fun StudioEditorPreview(
+    exoPlayer: ExoPlayer,
+    zoomKeyframes: List<ZoomKeyframe>,
+    mouseSamples: List<MouseSample>,
+    modifier: Modifier = Modifier,
+    outputToOriginalMs: (Long) -> Long = { it }
+) {
+    var positionMs by remember { mutableLongStateOf(0L) }
+    LaunchedEffect(exoPlayer) {
+        while (kotlinx.coroutines.isActive) {
+            androidx.compose.runtime.withFrameNanos { }
+            positionMs = exoPlayer.currentPosition
+        }
+    }
+
+    val camState = remember(zoomKeyframes, mouseSamples, outputToOriginalMs) {
+        derivedStateOf {
+            AutoZoomGenerator.evaluateCameraAt(outputToOriginalMs(positionMs), zoomKeyframes, mouseSamples)
+        }
+    }
+
+    Box(
+        modifier = modifier.fillMaxSize().background(Color.Black),
+        contentAlignment = Alignment.Center
+    ) {
+        ZoomedVideoSurface(exoPlayer = exoPlayer, camProvider = { camState.value })
+    }
+}
+
+/**
+ * The camera operates on the VIDEO rectangle (not the letterboxed container), exactly like the export:
+ *  - outer box = video aspect ratio + clip (what leaves the frame is cropped, same as Transformer output)
+ *  - inner layer = scale about the center + translation that moves the focus point to the center.
+ *
+ * TextureView (not SurfaceView) ensures that graphicsLayer transforms apply directly to the video pixels.
+ */
+@Composable
+fun ZoomedVideoSurface(
+    exoPlayer: ExoPlayer,
+    camProvider: () -> CameraState,
+    modifier: Modifier = Modifier
+) {
+    var aspect by remember { mutableFloatStateOf(9f / 16f) }
+    DisposableEffect(exoPlayer) {
+        fun apply(v: VideoSize) {
+            if (v.width > 0 && v.height > 0) {
+                aspect = v.width * v.pixelWidthHeightRatio / v.height
+            }
+        }
+        apply(exoPlayer.videoSize)
+        val listener = object : Player.Listener {
+            override fun onVideoSizeChanged(videoSize: VideoSize) = apply(videoSize)
+        }
+        exoPlayer.addListener(listener)
+        onDispose {
+            exoPlayer.removeListener(listener)
+            exoPlayer.setVideoTextureView(null)
+        }
+    }
+
+    Box(modifier = modifier.aspectRatio(aspect).clipToBounds()) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .graphicsLayer {
+                    val cam = camProvider()
+                    val t = CameraMath.ndcTransform(cam.scale, cam.focusX, cam.focusY)
+                    transformOrigin = TransformOrigin.Center
+                    scaleX = t.scale
+                    scaleY = t.scale
+                    translationX = t.pixelTranslationX(size.width)
+                    translationY = t.pixelTranslationY(size.height)
+                }
+        ) {
+            AndroidView(
+                factory = { ctx -> TextureView(ctx) },
+                update = { exoPlayer.setVideoTextureView(it) },
+                modifier = Modifier.fillMaxSize()
+            )
+        }
     }
 }
