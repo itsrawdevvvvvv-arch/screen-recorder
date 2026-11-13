@@ -4,84 +4,46 @@ import android.content.Context
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.floatPreferencesKey
-import androidx.datastore.preferences.core.stringPreferencesKey
+import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
-import com.recordly.mobile.model.CanvasStyleConfig
-import com.recordly.mobile.model.GroqSettings
-import com.recordly.mobile.model.KeyboardTrimMode
+import com.recordly.mobile.model.AppSettings
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
-import kotlinx.serialization.encodeToString
-import kotlinx.serialization.json.Json
 
 private val Context.dataStore by preferencesDataStore(name = "recordly_settings")
 
 class SettingsRepository(private val context: Context) {
 
-    private val json = Json { ignoreUnknownKeys = true; encodeDefaults = true }
-
     private object Keys {
-        val GROQ_API_KEY = stringPreferencesKey("groq_api_key")
-        val WHISPER_MODEL = stringPreferencesKey("whisper_model")
-        val CHAT_MODEL = stringPreferencesKey("chat_model")
-        val VISION_MODEL = stringPreferencesKey("vision_model")
-        val KEYBOARD_TRIM_MODE = stringPreferencesKey("keyboard_trim_mode")
-        val AUTO_ZOOM_ENABLED = booleanPreferencesKey("auto_zoom_enabled")
-        val AUTO_AI_SYNC = booleanPreferencesKey("auto_ai_sync_on_stop")
-        val DEFAULT_ZOOM_SCALE = floatPreferencesKey("default_zoom_scale")
-        val RECORD_INTERNAL_AUDIO = booleanPreferencesKey("record_internal_audio")
+        val SHOW_FLOATING_MENU = booleanPreferencesKey("show_floating_menu")
+        val CONTACT_SHEET_INTERVAL = floatPreferencesKey("contact_sheet_interval")
+        val MAX_KEYFRAMES = intPreferencesKey("max_keyframes")
         val RECORD_MIC = booleanPreferencesKey("record_microphone")
-        val CANVAS_STYLE_JSON = stringPreferencesKey("canvas_style_json")
     }
 
-    val groqSettingsFlow: Flow<GroqSettings> = context.dataStore.data.map { prefs ->
-        val mode = prefs[Keys.KEYBOARD_TRIM_MODE]?.let {
-            runCatching { KeyboardTrimMode.valueOf(it) }.getOrNull()
-        } ?: KeyboardTrimMode.REMOVE
-
-        GroqSettings(
-            apiKey = prefs[Keys.GROQ_API_KEY].orEmpty(),
-            whisperModel = prefs[Keys.WHISPER_MODEL] ?: "whisper-large-v3-turbo",
-            chatModel = prefs[Keys.CHAT_MODEL] ?: "llama-3.3-70b-versatile",
-            visionModel = prefs[Keys.VISION_MODEL] ?: "qwen/qwen3.8-27b",
-            keyboardTrimMode = mode,
-            autoZoomEnabled = prefs[Keys.AUTO_ZOOM_ENABLED] ?: true,
-            autoAiSyncOnStop = prefs[Keys.AUTO_AI_SYNC] ?: false,
-            defaultZoomScale = prefs[Keys.DEFAULT_ZOOM_SCALE] ?: 2.0f,
-            recordInternalAudio = prefs[Keys.RECORD_INTERNAL_AUDIO] ?: true,
+    val appSettingsFlow: Flow<AppSettings> = context.dataStore.data.map { prefs ->
+        AppSettings(
+            showFloatingMenu = prefs[Keys.SHOW_FLOATING_MENU] ?: true,
+            contactSheetIntervalSec = prefs[Keys.CONTACT_SHEET_INTERVAL] ?: 1.5f,
+            maxKeyframes = prefs[Keys.MAX_KEYFRAMES] ?: 24,
             recordMicrophone = prefs[Keys.RECORD_MIC] ?: true
         )
     }
 
-    val canvasStyleFlow: Flow<CanvasStyleConfig> = context.dataStore.data.map { prefs ->
-        prefs[Keys.CANVAS_STYLE_JSON]?.let { raw ->
-            runCatching { json.decodeFromString<CanvasStyleConfig>(raw) }.getOrNull()
-        } ?: CanvasStyleConfig()
-    }
+    suspend fun getAppSettings(): AppSettings = appSettingsFlow.first()
 
-    suspend fun getGroqSettings(): GroqSettings = groqSettingsFlow.first()
-
-    suspend fun getCanvasStyle(): CanvasStyleConfig = canvasStyleFlow.first()
-
-    suspend fun updateGroqSettings(settings: GroqSettings) {
+    suspend fun updateAppSettings(settings: AppSettings) {
         context.dataStore.edit { prefs ->
-            prefs[Keys.GROQ_API_KEY] = settings.apiKey.trim()
-            prefs[Keys.WHISPER_MODEL] = settings.whisperModel.trim().ifEmpty { "whisper-large-v3-turbo" }
-            prefs[Keys.CHAT_MODEL] = settings.chatModel.trim().ifEmpty { "llama-3.3-70b-versatile" }
-            prefs[Keys.VISION_MODEL] = settings.visionModel.trim().ifEmpty { "qwen/qwen3.8-27b" }
-            prefs[Keys.KEYBOARD_TRIM_MODE] = settings.keyboardTrimMode.name
-            prefs[Keys.AUTO_ZOOM_ENABLED] = settings.autoZoomEnabled
-            prefs[Keys.AUTO_AI_SYNC] = settings.autoAiSyncOnStop
-            prefs[Keys.DEFAULT_ZOOM_SCALE] = settings.defaultZoomScale.coerceIn(1.3f, 2.8f)
-            prefs[Keys.RECORD_INTERNAL_AUDIO] = settings.recordInternalAudio
+            prefs[Keys.SHOW_FLOATING_MENU] = settings.showFloatingMenu
+            prefs[Keys.CONTACT_SHEET_INTERVAL] = settings.contactSheetIntervalSec
+            prefs[Keys.MAX_KEYFRAMES] = settings.maxKeyframes
             prefs[Keys.RECORD_MIC] = settings.recordMicrophone
         }
     }
 
-    suspend fun updateCanvasStyle(style: CanvasStyleConfig) {
-        context.dataStore.edit { prefs ->
-            prefs[Keys.CANVAS_STYLE_JSON] = json.encodeToString(style)
-        }
+    suspend fun toggleFloatingMenu() {
+        val current = getAppSettings()
+        updateAppSettings(current.copy(showFloatingMenu = !current.showFloatingMenu))
     }
 }

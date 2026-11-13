@@ -1,24 +1,18 @@
 package com.recordly.mobile.ui
 
 import android.app.Application
-import android.content.Intent
 import android.net.Uri
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.recordly.mobile.RecordlyApp
-import com.recordly.mobile.ai.AiPipelineOrchestrator
-import com.recordly.mobile.ai.GroqApiClient
 import com.recordly.mobile.capture.ActiveSessionTracker
-import com.recordly.mobile.capture.RecordlyAccessibilityService
-import com.recordly.mobile.data.SrtCodec
+import com.recordly.mobile.editor.ContactSheetEngine
 import com.recordly.mobile.editor.VideoExportEngine
-import com.recordly.mobile.model.AiEditPlan
+import com.recordly.mobile.model.AppSettings
 import com.recordly.mobile.model.EditSegment
-import com.recordly.mobile.model.GroqSettings
 import com.recordly.mobile.model.RecordingProject
 import com.recordly.mobile.model.SegmentAction
 import com.recordly.mobile.model.ZoomKeyframe
-import com.recordly.mobile.model.ZoomSource
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -41,23 +35,15 @@ class RecordlyViewModel(application: Application) : AndroidViewModel(application
     private val app = application as RecordlyApp
     private val projectRepo = app.projectRepository
     private val settingsRepo = app.settingsRepository
-    private val groqClient = GroqApiClient()
-    private val orchestrator = AiPipelineOrchestrator(application, projectRepo, settingsRepo, groqClient)
     private val exportEngine = VideoExportEngine(application)
 
     val projects = projectRepo.projects
-    val groqSettings = settingsRepo.groqSettingsFlow
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), GroqSettings())
+    val appSettings = settingsRepo.appSettingsFlow
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), AppSettings())
 
-    val connectedMice = app.mouseDeviceMonitor.connectedMice
     val isRecording = ActiveSessionTracker.isRecording
     val recordingElapsedMs = ActiveSessionTracker.elapsedMs
     val lastSavedProjectId = ActiveSessionTracker.lastSavedProjectId
-
-    val aiProgress = orchestrator.progress
-
-    private val _accessibilityEnabled = MutableStateFlow(false)
-    val accessibilityEnabled: StateFlow<Boolean> = _accessibilityEnabled.asStateFlow()
 
     private val _activeProject = MutableStateFlow<RecordingProject?>(null)
     val activeProject: StateFlow<RecordingProject?> = _activeProject.asStateFlow()
@@ -68,24 +54,35 @@ class RecordlyViewModel(application: Application) : AndroidViewModel(application
     private val _toastMessage = MutableStateFlow<String?>(null)
     val toastMessage: StateFlow<String?> = _toastMessage.asStateFlow()
 
-    private val _groqTestResult = MutableStateFlow<String?>(null)
-    val groqTestResult: StateFlow<String?> = _groqTestResult.asStateFlow()
+    private val _isGeneratingSheet = MutableStateFlow(false)
+    val isGeneratingSheet: StateFlow<Boolean> = _isGeneratingSheet.asStateFlow()
 
     init {
         viewModelScope.launch {
             projectRepo.reloadProjects()
         }
-        refreshHardwareAndPermissions()
     }
 
-    fun refreshHardwareAndPermissions() {
-        app.mouseDeviceMonitor.refresh()
-        _accessibilityEnabled.value = RecordlyAccessibilityService.isEnabled(app)
+    fun toggleFloatingMenu() {
+        viewModelScope.launch {
+            settingsRepo.toggleFloatingMenu()
+        }
+    }
+
+    fun updateSettings(settings: AppSettings) {
+        viewModelScope.launch {
+            settingsRepo.updateAppSettings(settings)
+            _toastMessage.value = "Settings updated"
+        }
     }
 
     fun loadProject(projectId: String) {
         viewModelScope.launch {
-            _activeProject.value = projectRepo.getProject(projectId)
+            val proj = projectRepo.getProject(projectId)
+            _activeProject.value = proj
+            if (proj != null && proj.keyframes.isEmpty()) {
+                regenerateContactSheet(projectId)
+            }
         }
     }
 
@@ -95,134 +92,60 @@ class RecordlyViewModel(application: Application) : AndroidViewModel(application
                 .onSuccess { proj ->
                     _activeProject.value = proj
                     onLoaded(proj.id)
+                    regenerateContactSheet(proj.id)
                 }
                 .onFailure { _toastMessage.value = "Import failed: ${it.message}" }
         }
     }
 
-    fun importExternalAudio(projectId: String, uri: Uri) {
+    fun regenerateContactSheet(projectId: String) {
         viewModelScope.launch {
-            runCatching { projectRepo.importExternalAudio(projectId, uri) }
-                .onSuccess { updated ->
-                    _activeProject.value = updated
-                    _toastMessage.value = "Voiceover audio linked. Run Groq AI Sync to align!"
-                }
-                .onFailure { _toastMessage.value = "Audio import failed: ${it.message}" }
+            val proj = projectRepo.getProject(projectId) ?: return@launch
+            _isGeneratingSheet.value = true
+            val settings = settingsRepo.getAppSettings()
+            val dir = projectRepo.getProjectDir(projectId)
+
+            runCatching {
+                ContactSheetEngine.generateContactSheet(
+                    context = app,
+                    project = proj,
+                    projectDir = dir,
+                    intervalSec = settings.contactSheetIntervalSec,
+                    maxFramesLimit = settings.maxKeyframes
+                )
+            }.onSuccess { result ->
+                val updated = proj.copy(
+                    contactSheetPdfPath = result.pdfPath,
+                    contactSheetZipPath = result.zipPath,
+                    keyframes = result.frames
+                )
+                projectRepo.saveProject(updated)
+                _activeProject.value = updated
+                _toastMessage.value = "Contact sheet created (${result.frames.size} frames)"
+            }.onFailure { err ->
+                _toastMessage.value = "Failed to create contact sheet: ${err.message}"
+            }
+            _isGeneratingSheet.value = false
         }
     }
 
-    fun importSrt(projectId: String, uri: Uri) {
+    fun applyClaudeAiResponse(projectId: String, pastedResponse: String) {
+        if (pastedResponse.isBlank()) return
         viewModelScope.launch {
-            runCatching { projectRepo.importSrtFile(projectId, uri) }
-                .onSuccess { updated ->
+            val proj = projectRepo.getProject(projectId) ?: return@launch
+            ContactSheetEngine.parseAiResponse(pastedResponse, proj.durationMs)
+                .onSuccess { plan ->
+                    val updated = proj.copy(
+                        title = plan.suggestedTitle.ifBlank { proj.title },
+                        editPlan = plan
+                    )
+                    projectRepo.saveProject(updated)
                     _activeProject.value = updated
-                    _toastMessage.value = "Loaded ${updated?.srtCues?.size ?: 0} .srt cues"
-                }
-                .onFailure { _toastMessage.value = "SRT import failed: ${it.message}" }
-        }
-    }
-
-    fun runGroqMagicSync(projectId: String) {
-        viewModelScope.launch {
-            orchestrator.runFullGroqSync(projectId)
-                .onSuccess { updated ->
-                    _activeProject.value = updated
-                    _toastMessage.value = "Groq AI synced trims, speeds, zooms & .srt!"
+                    _toastMessage.value = "Applied AI plan: ${plan.segments.size} cuts, ${plan.zoomKeyframes.size} zooms!"
                 }
                 .onFailure { err ->
-                    _toastMessage.value = err.message ?: "Groq AI sync failed"
+                    _toastMessage.value = "Could not parse AI response: ${err.message}"
                 }
-        }
-    }
-
-    fun refineWithPrompt(projectId: String, prompt: String) {
-        if (prompt.isBlank()) return
-        viewModelScope.launch {
-            orchestrator.refineWithPrompt(projectId, prompt.trim())
-                .onSuccess { updated ->
-                    _activeProject.value = updated
-                    _toastMessage.value = "AI updated the timeline!"
-                }
-                .onFailure { err ->
-                    _toastMessage.value = err.message ?: "Prompt failed"
-                }
-        }
-    }
-
-    fun toggleSegmentTrim(segmentIndex: Int) {
-        val proj = _activeProject.value ?: return
-        val plan = ensurePlan(proj)
-        val updatedSegments = plan.segments.mapIndexed { idx, seg ->
-            if (idx == segmentIndex) {
-                val nextAction = if (seg.action == SegmentAction.KEEP) SegmentAction.TRIM else SegmentAction.KEEP
-                seg.copy(action = nextAction)
-            } else seg
-        }
-        saveUpdatedPlan(proj, plan.copy(
-            segments = updatedSegments,
-            remappedSrtCues = SrtCodec.remapCuesToEditedTimeline(proj.srtCues, updatedSegments)
-        ))
-    }
-
-    fun cycleSegmentSpeed(segmentIndex: Int) {
-        val proj = _activeProject.value ?: return
-        val plan = ensurePlan(proj)
-        val speeds = listOf(0.75f, 1.0f, 1.5f, 2.0f, 3.0f, 5.0f)
-        val updatedSegments = plan.segments.mapIndexed { idx, seg ->
-            if (idx == segmentIndex) {
-                val curIdx = speeds.indexOfFirst { kotlin.math.abs(it - seg.speed) < 0.05f }
-                val nextSpeed = speeds[(curIdx + 1) % speeds.size]
-                seg.copy(speed = nextSpeed, action = SegmentAction.KEEP)
-            } else seg
-        }
-        saveUpdatedPlan(proj, plan.copy(
-            segments = updatedSegments,
-            remappedSrtCues = SrtCodec.remapCuesToEditedTimeline(proj.srtCues, updatedSegments)
-        ))
-    }
-
-    fun addManualZoomAt(timestampMs: Long, focusX: Float = 0.5f, focusY: Float = 0.5f) {
-        val proj = _activeProject.value ?: return
-        val plan = ensurePlan(proj)
-        val start = (timestampMs - 300L).coerceAtLeast(0L)
-        val end = (timestampMs + 1500L).coerceAtMost(proj.durationMs)
-        val newKf = ZoomKeyframe(
-            id = UUID.randomUUID().toString(),
-            startMs = start,
-            endMs = end,
-            focusX = focusX.coerceIn(0.1f, 0.9f),
-            focusY = focusY.coerceIn(0.1f, 0.9f),
-            zoomScale = proj.styleConfig.defaultZoomScale,
-            source = ZoomSource.MANUAL,
-            note = "Manual zoom"
-        )
-        saveUpdatedPlan(
-            proj,
-            plan.copy(zoomKeyframes = (plan.zoomKeyframes + newKf).sortedBy { it.startMs })
-        )
-    }
-
-    fun removeZoomKeyframe(id: String) {
-        val proj = _activeProject.value ?: return
-        val plan = ensurePlan(proj)
-        saveUpdatedPlan(proj, plan.copy(zoomKeyframes = plan.zoomKeyframes.filterNot { it.id == id }))
-    }
-
-    fun toggleBurnSubtitles() {
-        val proj = _activeProject.value ?: return
-        val updated = proj.copy(styleConfig = proj.styleConfig.copy(burnSubtitles = !proj.styleConfig.burnSubtitles))
-        viewModelScope.launch {
-            projectRepo.saveProject(updated)
-            _activeProject.value = updated
-        }
-    }
-
-    fun toggleShowCursor() {
-        val proj = _activeProject.value ?: return
-        val updated = proj.copy(styleConfig = proj.styleConfig.copy(showCursorRing = !proj.styleConfig.showCursorRing))
-        viewModelScope.launch {
-            projectRepo.saveProject(updated)
-            _activeProject.value = updated
         }
     }
 
@@ -257,17 +180,29 @@ class RecordlyViewModel(application: Application) : AndroidViewModel(application
         }
     }
 
-    fun exportSrtFile() {
+    fun exportPdfToDownloads() {
         val proj = _activeProject.value ?: return
-        val cues = proj.editPlan?.remappedSrtCues?.takeIf { it.isNotEmpty() } ?: proj.srtCues
-        if (cues.isEmpty()) {
-            _toastMessage.value = "No subtitles yet. Run Groq AI Sync first."
-            return
-        }
+        val path = proj.contactSheetPdfPath ?: return
+        val file = File(path)
+        if (!file.exists()) return
+
         viewModelScope.launch {
-            val safeTitle = proj.title.replace(Regex("[^a-zA-Z0-9_-]"), "_").take(32).ifBlank { "Recordly" }
-            val uri = projectRepo.exportSrtToDownloads(cues, safeTitle)
-            _toastMessage.value = if (uri != null) "Saved .srt to Downloads/Recordly" else "Failed to save .srt"
+            val safeTitle = "${proj.title.replace(Regex("[^a-zA-Z0-9_-]"), "_").take(24)}_contact_sheet.pdf"
+            val uri = projectRepo.exportFileToDownloads(file, safeTitle, "application/pdf")
+            _toastMessage.value = if (uri != null) "Saved PDF to Downloads/Recordly" else "Export failed"
+        }
+    }
+
+    fun exportZipToDownloads() {
+        val proj = _activeProject.value ?: return
+        val path = proj.contactSheetZipPath ?: return
+        val file = File(path)
+        if (!file.exists()) return
+
+        viewModelScope.launch {
+            val safeTitle = "${proj.title.replace(Regex("[^a-zA-Z0-9_-]"), "_").take(24)}_bundle.zip"
+            val uri = projectRepo.exportFileToDownloads(file, safeTitle, "application/zip")
+            _toastMessage.value = if (uri != null) "Saved ZIP to Downloads/Recordly" else "Export failed"
         }
     }
 
@@ -275,22 +210,7 @@ class RecordlyViewModel(application: Application) : AndroidViewModel(application
         viewModelScope.launch {
             projectRepo.deleteProject(projectId)
             if (_activeProject.value?.id == projectId) _activeProject.value = null
-        }
-    }
-
-    fun saveGroqSettings(updated: GroqSettings) {
-        viewModelScope.launch {
-            settingsRepo.updateGroqSettings(updated)
-            _toastMessage.value = "Settings saved"
-        }
-    }
-
-    fun testGroqConnection(apiKey: String) {
-        viewModelScope.launch {
-            _groqTestResult.value = "Testing Groq API…"
-            groqClient.testConnection(apiKey)
-                .onSuccess { count -> _groqTestResult.value = "Connected! $count Groq models available." }
-                .onFailure { err -> _groqTestResult.value = "Failed: ${err.message}" }
+            _toastMessage.value = "Project deleted"
         }
     }
 
@@ -304,19 +224,5 @@ class RecordlyViewModel(application: Application) : AndroidViewModel(application
 
     fun clearExportStatus() {
         _exportState.value = ExportUiState()
-    }
-
-    private fun ensurePlan(project: RecordingProject): AiEditPlan {
-        return project.editPlan ?: AiEditPlan(
-            segments = listOf(EditSegment(0L, project.durationMs, 1.0f, SegmentAction.KEEP, "Full video"))
-        )
-    }
-
-    private fun saveUpdatedPlan(project: RecordingProject, plan: AiEditPlan) {
-        val updated = project.copy(editPlan = plan)
-        _activeProject.value = updated
-        viewModelScope.launch {
-            projectRepo.saveProject(updated)
-        }
     }
 }

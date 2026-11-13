@@ -4,13 +4,16 @@
     android:height="108dp"
     android:viewportWidth="108"
     android:viewportHeight="108">
+    <!-- Outer radar focal circle: Warm Sand -->
     <path
-        android:fillColor="#6C5CE7"
+        android:fillColor="#DCC9A9"
         android:pathData="M54,28A26,26 0 1,1 54,80A26,26 0 1,1 54,28Z" />
+    <!-- Middle ring: Forest Sage -->
     <path
-        android:fillColor="#00D2A0"
-        android:pathData="M54,40A14,14 0 1,1 54,68A14,14 0 1,1 54,40Z" />
+        android:fillColor="#4E6851"
+        android:pathData="M54,38A16,16 0 1,1 54,70A16,16 0 1,1 54,38Z" />
+    <!-- Center recording dot: Terracotta -->
     <path
-        android:fillColor="#FFFFFF"
-        android:pathData="M54,48A6,6 0 1,1 54,60A6,6 0 1,1 54,48Z" />
+        android:fillColor="#B83A2D"
+        android:pathData="M54,46A8,8 0 1,1 54,62A8,8 0 1,1 54,46Z" />
 </vector>

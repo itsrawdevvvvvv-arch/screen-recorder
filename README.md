@@ -1,46 +1,44 @@
 # Recordly Mobile (Android)
 
-An Android screen recorder & creator video editor inspired by **Screen Studio** / **Recordly**, powered by **Groq API**, **AndroidX Media3 Transformer (1.11.1)**, **Jetpack Compose**, and **Post-Recording Visual Cursor Detection & Auto-Zoom** — with strictly **zero root or Shizuku required**.
+A minimal, privacy-centric screen recording & visual contact sheet studio for Android.
+Designed with the sleek layout aesthetic of the reference showcase cards, a warm color palette (**Warm Sand**, **Terracotta**, **Forest Sage**, **Dark Charcoal**), **Product Sans** typography, and a **zero-API-key Claude AI storyboard workflow**.
 
 ---
 
-## Architecture & Features
+## Highlights
 
-### 1. Mathematical Auto Zoom-In & Centering Pipeline
-- **Zero Root / Zero Daemon Architecture:** Android's SurfaceFlinger natively renders connected USB or Bluetooth mouse pointers directly into the screen buffer. `MediaProjection` records this arrow directly into MP4 frames.
-- **Visual Cursor Detection (`VisualAnalyzer`):**
-  - Multi-scale procedural template matching specifically calibrated for the AOSP arrow cursor (dark outline, white core, top-left hotspot).
-  - Fast two-probe pre-filter to scan frames at 6 fps in milliseconds.
-  - Frame-differencing to find localized UI activity hotspots (touch / click reactions) with status bar exclusion.
-  - Fuses visual samples with `RecordlyAccessibilityService` clicks and visually inferred clicks.
-- **Screen Studio Dynamic Keyframing (`AutoZoomGenerator`):**
-  - 350ms lead-in ease-in before clicks/dwells.
-  - 1.5s–2.5s hold zoomed at 1.8x – 2.2x.
-  - Dynamic panning across waypoints if sequential actions occur within 2.0s without zooming out.
-  - 400ms lead-out ease-out back to 1.0x full screen when idle.
-  - Viewport boundary clamping (`fx, fy ∈ [0.5/S, 1 - 0.5/S]`) so black margins never leak into the frame.
-- **Unified NDC Centering Math (`CameraMath`):**
-  - Transform applied to NDC vertices: $p' = S \cdot (p - g)$ with $g = (2fx - 1, 1 - 2fy)$.
-  - Media3 OpenGL `MatrixTransformation` sets uniform scale $S$ and translates $(-S \cdot gx, -S \cdot gy)$, centering the focal point at screen center $(0, 0)$.
-  - Compose Live Preview (`StudioEditorScreen`) uses `TextureView` and the identical `NdcTransform` via `graphicsLayer` centered on `TransformOrigin.Center`, guaranteeing 1:1 parity between live preview and exported video.
+### 1. Minimal Zero-API-Key Architecture
+- **No API keys or online quotas required:** Recording and editing work 100% offline on-device.
+- **Claude AI Storyboard Workflow:**
+  1. Record your screen workflow.
+  2. Recordly automatically extracts crisp timestamped keyframes and generates a high-resolution **Multi-Page Landscape PDF Storyboard** and **.zip bundle** (`frames/`, `contact_sheet.pdf`, `metadata.json`, `prompt.txt`).
+  3. Tap **Copy AI Prompt** and share the contact sheet with Claude AI (or any LLM).
+  4. Claude analyzes the visual frames and returns an Edit Decision List (EDL) in clean JSON with cuts, speeds, and dynamic camera zoom coordinates.
+  5. Tap **Paste Claude's Response** in Recordly — the app instantly executes the trims and renders dynamic pan-zooms in the live preview player and hardware-accelerated MP4 export!
 
-### 2. Phone Keyboard Auto-Trim
-- **Real-Time Detection:** `RecordlyAccessibilityService` tracks `TYPE_INPUT_METHOD` window states and records millisecond timestamps whenever the soft keyboard appears.
-- **Configurable Modes:**
-  - `REMOVE`: Trims keyboard segments so typing never appears in the final video.
-  - `SPEED_UP_5X`: Speeds up keyboard typing by 5.0x so typing passes rapidly.
-  - `KEEP`: Retains normal speed.
-- **Vision Fallback:** Groq Vision scans keyframes to catch on-screen keyboards even in imported videos.
+### 2. Floating Recording Menu Toggle
+- An instant toggle switch on the Home Screen top banner and Settings: **`MENU: ON / OFF`**.
+- **When ON:** A draggable, semi-transparent capsule pill overlays on screen with timer, Pause/Resume, and Stop buttons.
+- **When OFF:** Records cleanly and unobtrusively without any UI elements obscuring the capture. The user easily stops recording with one tap from the Android status bar notification.
 
-### 3. Whole-App Groq API Suite
-- **Groq Whisper (`whisper-large-v3-turbo`):** Automatic speech-to-text with word-level timestamps, generating crisp mobile captions serialized to `.srt`. Also supports importing custom external audio and `.srt` files.
-- **Groq Vision (`qwen/qwen3.8-27b`):** Multi-frame visual analyzer detecting cursor locations, UI action context, loading/idle screens, and keyboard visibility.
-- **Groq AI Director (`llama-3.3-70b-versatile`):** Generates an Edit Decision List (EDL) adjusting clip speeds (0.75x–5.0x) to synchronize screen recording motion to spoken narration, trimming dead silences, and optimizing zoom keyframes.
-- **Interactive Prompt Refinement:** Natural-language chat box in the Studio Editor allowing users to say "make typing 3x faster" or "add zoom on the third button" and get instant timeline updates from Groq.
+### 3. Native PDF & ZIP Contact Sheet Engine
+- Uses built-in `android.graphics.pdf.PdfDocument` (zero third-party bloat) to lay out a clean 2x3 grid of timestamp-badged frames per page with header metadata and Claude AI prompt instructions.
+- Bundles all high-resolution frames, the PDF, and structured prompt text into a single `.zip` file for instant sharing.
+- Save directly to device storage (`Downloads/Recordly`).
 
-### 4. Hardware-Accelerated Video Export
-- AndroidX Media3 Transformer with H.264 hardware encoding, clipping, speed adjustments, zoom matrix transformations, subtitle overlays, and cursor focus halos.
-- Direct export to `Movies/Recordly` (MP4) and `Downloads/Recordly` (.SRT).
+### 4. Mathematical Camera Zoom & Centering Pipeline (`CameraMath`)
+- Derivation: $p' = S \cdot (p - g) \implies tx = -S \cdot gx, \quad ty = -S \cdot gy$
+- Viewport clamped to $[0.5/S, 1 - 0.5/S]$ to prevent black border bleed.
+- Unified coordinate math shared between Jetpack Compose live preview (`TextureView` + `graphicsLayer`) and AndroidX Media3 Transformer OpenGL export.
+
+### 5. UI Design & Reference Color Palette
+- **Warm Sand** (`#DCC9A9`): Primary highlights, badges, and key metric cards.
+- **Terracotta** (`#B83A2D`): Action buttons, recording indicators, and alert states.
+- **Forest Sage** (`#4E6851`): Success indicators, bento steps, and secondary tags.
+- **Studio Charcoal** (`#0E1012`, `#17191D`, `#22262E`): Sleek dark background surfaces with subtle borders.
+- **Product Sans**: Geometric typography across headings, metrics, and cards.
+- **Hero Card**: Contour wave background with camera focal radar graphic and pulse ring.
+- **Floating Pill Navigation Bar**: Bottom navigation with Home, Projects Grid, and Settings.
 
 ---
 
@@ -54,25 +52,17 @@ RecordlyMobile/
 │   │   ├── java/com/recordly/mobile/
 │   │   │   ├── MainActivity.kt
 │   │   │   ├── RecordlyApp.kt
-│   │   │   ├── ai/
-│   │   │   │   ├── AiPipelineOrchestrator.kt
-│   │   │   │   ├── AudioExtractor.kt
-│   │   │   │   ├── GroqApiClient.kt
-│   │   │   │   └── VisualAnalyzer.kt
 │   │   │   ├── capture/
 │   │   │   │   ├── ActiveSessionTracker.kt
 │   │   │   │   ├── FloatingControlService.kt
-│   │   │   │   ├── MouseDeviceMonitor.kt
-│   │   │   │   ├── RecordlyAccessibilityService.kt
 │   │   │   │   └── ScreenRecordService.kt
 │   │   │   ├── data/
 │   │   │   │   ├── ProjectRepository.kt
-│   │   │   │   ├── SettingsRepository.kt
-│   │   │   │   └── SrtCodec.kt
+│   │   │   │   └── SettingsRepository.kt
 │   │   │   ├── editor/
 │   │   │   │   ├── AutoZoomGenerator.kt
-│   │   │   │   ├── VideoExportEngine.kt
-│   │   │   │   └── ZoomPipeline.kt
+│   │   │   │   ├── ContactSheetEngine.kt
+│   │   │   │   └── VideoExportEngine.kt
 │   │   │   ├── model/
 │   │   │   │   └── Models.kt
 │   │   │   └── ui/
@@ -82,10 +72,20 @@ RecordlyMobile/
 │   │   │       ├── StudioEditorScreen.kt
 │   │   │       └── theme/Theme.kt
 │   │   └── res/
+│   │       ├── drawable/
+│   │       ├── mipmap-anydpi-v26/
+│   │       ├── values/
+│   │       │   ├── colors.xml
+│   │       │   ├── strings.xml
+│   │       │   └── themes.xml
+│   │       └── xml/
+│   │           └── file_paths.xml
 │   └── build.gradle.kts
 ├── gradle/
 │   ├── libs.versions.toml
 │   └── wrapper/
+│       ├── gradle-wrapper.jar
+│       └── gradle-wrapper.properties
 ├── build.gradle.kts
 ├── settings.gradle.kts
 └── README.md
@@ -97,12 +97,12 @@ RecordlyMobile/
 
 ### Option 1: Android Studio (Recommended)
 1. Extract `RecordlyMobile.zip`.
-2. Open Android Studio → **File** → **Open...** → select the `RecordlyMobile` directory.
+2. Open Android Studio → **File** → **Open...** → choose the `RecordlyMobile` folder.
 3. Allow Gradle to sync.
-4. Go to **Build** → **Build Bundle(s) / APK(s)** → **Build APK(s)** (or click **Run** to install directly on a connected device).
+4. Click **Build** → **Build Bundle(s) / APK(s)** → **Build APK(s)** (or click **Run** to launch directly on your Android phone or emulator).
 
-### Option 2: Command Line
-Requirements: **JDK 17+** and **Android SDK API 35** (`ANDROID_HOME` configured).
+### Option 2: Command Line (Terminal / PowerShell)
+Requires **JDK 17+** and **Android SDK (API 35)**:
 
 ```bash
 # Windows
@@ -118,9 +118,22 @@ The APK will be generated at:
 
 ---
 
-## Running the App
-1. Open **Settings** in the app and enter your **Groq API Key** (`gsk_...`), then tap **Test Key**.
-2. Connect a USB-C or Bluetooth mouse to your Android device (the mouse pointer will appear natively on screen).
-3. Tap **Start Recording** on the Home Screen.
-4. Record your workflow and tap **Stop & Edit** on the floating pill or notification.
-5. In the **Studio Editor**, tap **Groq AI Magic Sync** to automatically synchronize narration, trims, keyboard removal, and dynamic auto zoom!
+## Step-by-Step Workflow Guide
+
+1. **Launch Recordly Mobile**:
+   - Check the **MENU: ON / OFF** toggle on the home banner to decide if you want the floating overlay menu or quiet recording.
+2. **Record Screen**:
+   - Tap the large terracotta record button on the Hero Showcase Card.
+   - Perform your app walkthrough, tutorial, or demo.
+   - Stop recording via the floating pill or notification bar.
+3. **Contact Sheet Storyboard**:
+   - The Studio Editor opens automatically with your contact sheet.
+   - Tap **"Copy AI Prompt"** (copies a detailed prompt with exact frame timestamps).
+   - Tap **"Download PDF"** or **"Download ZIP"** to save to `Downloads/Recordly`.
+4. **AI Processing with Claude**:
+   - Paste the copied prompt and upload the PDF/ZIP into Claude AI.
+   - Claude reviews the storyboard frames and outputs a clean JSON Edit Decision List (EDL).
+5. **Apply & Export**:
+   - Tap **"Paste Claude Response"** in Recordly and paste Claude's JSON.
+   - Trims, speeds, and dynamic camera zooms are instantly applied to your timeline!
+   - Tap **"Export MP4"** to render a 1080p hardware-accelerated video to your device gallery (`Movies/Recordly`).

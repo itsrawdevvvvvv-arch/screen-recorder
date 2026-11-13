@@ -12,17 +12,16 @@ import android.hardware.display.VirtualDisplay
 import android.media.MediaRecorder
 import android.media.projection.MediaProjection
 import android.media.projection.MediaProjectionManager
-import android.net.Uri
 import android.os.Build
 import android.os.IBinder
+import android.provider.Settings
 import android.util.DisplayMetrics
 import android.view.WindowManager
 import androidx.core.app.NotificationCompat
 import com.recordly.mobile.MainActivity
 import com.recordly.mobile.R
 import com.recordly.mobile.RecordlyApp
-import com.recordly.mobile.editor.AutoZoomGenerator
-import com.recordly.mobile.editor.ZoomPipeline
+import com.recordly.mobile.editor.ContactSheetEngine
 import com.recordly.mobile.model.AiEditPlan
 import com.recordly.mobile.model.EditSegment
 import com.recordly.mobile.model.RecordingProject
@@ -87,7 +86,7 @@ class ScreenRecordService : Service() {
             ACTION_RESUME -> {
                 runCatching { mediaRecorder?.resume() }
                 ActiveSessionTracker.resumeSession()
-                updateNotification("Recording screen & mouse…")
+                updateNotification("Recording screen…")
             }
             ACTION_STOP -> {
                 stopAndFinalizeRecording()
@@ -119,7 +118,6 @@ class ScreenRecordService : Service() {
         wm.defaultDisplay.getRealMetrics(metrics)
         val densityDpi = metrics.densityDpi
 
-        // Scale down nicely for fast hardware encoding while preserving aspect ratio & /16 alignment
         val maxSide = 1920
         val scale = minOf(1f, maxSide.toFloat() / maxOf(metrics.widthPixels, metrics.heightPixels).toFloat())
         recordWidth = ((metrics.widthPixels * scale).toInt() / 16) * 16
@@ -133,7 +131,7 @@ class ScreenRecordService : Service() {
         projection.registerCallback(projectionCallback, null)
 
         serviceScope.launch {
-            val settings = app.settingsRepository.getGroqSettings()
+            val settings = app.settingsRepository.getAppSettings()
             hasAudioTrack = settings.recordMicrophone
 
             val recorder = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
@@ -174,11 +172,15 @@ class ScreenRecordService : Service() {
                 )
 
                 ActiveSessionTracker.beginSession()
-                ClickLog.begin()
                 recorder.start()
 
+                // Check toggle: only start floating menu if enabled & permitted
+                if (settings.showFloatingMenu && Settings.canDrawOverlays(this@ScreenRecordService)) {
+                    startService(Intent(this@ScreenRecordService, FloatingControlService::class.java))
+                }
+
                 startTicker()
-                updateNotification("Recording active • Cursor & Keyboard ready")
+                updateNotification("Recording active • Tap to finish")
             } catch (e: Exception) {
                 e.printStackTrace()
                 cleanupMedia()
@@ -201,8 +203,7 @@ class ScreenRecordService : Service() {
         tickerJob?.cancel()
         stopService(Intent(this, FloatingControlService::class.java))
 
-        val a11yClicks = ClickLog.end()
-        val (elapsedDuration, _, keyboardIntervals) = ActiveSessionTracker.endSession()
+        val elapsedDuration = ActiveSessionTracker.endSession()
         cleanupMedia()
 
         val file = currentOutputFile
@@ -217,32 +218,12 @@ class ScreenRecordService : Service() {
         serviceScope.launch(Dispatchers.IO) {
             val meta = app.projectRepository.readVideoMetadata(file.absolutePath)
             val actualDuration = if (meta.durationMs > 0L) meta.durationMs else elapsedDuration
-            val settings = app.settingsRepository.getGroqSettings()
-            val style = app.settingsRepository.getCanvasStyle().copy(defaultZoomScale = settings.defaultZoomScale)
+            val settings = app.settingsRepository.getAppSettings()
 
-            updateNotification("Analyzing cursor & generating auto-zoom…")
-            val zoomResult = if (settings.autoZoomEnabled) {
-                runCatching {
-                    ZoomPipeline.run(
-                        context = applicationContext,
-                        videoUri = Uri.fromFile(file),
-                        accessibilityClicks = a11yClicks,
-                        clockOffsetMs = 0L
-                    )
-                }.getOrNull()
-            } else null
-
-            val finalMouseSamples = zoomResult?.mouseSamples ?: emptyList()
-            val autoZooms = zoomResult?.zoomKeyframes ?: emptyList()
-
-            val initialSegments = AutoZoomGenerator.buildInitialSegmentsWithKeyboard(
-                durationMs = actualDuration,
-                keyboardIntervals = keyboardIntervals,
-                mode = settings.keyboardTrimMode
-            )
+            updateNotification("Generating Contact Sheet & AI Storyboard…")
 
             val stamp = SimpleDateFormat("MMM dd, HH:mm", Locale.US).format(Date())
-            val project = RecordingProject(
+            val initialProject = RecordingProject(
                 id = projectId,
                 title = "Recording $stamp",
                 createdAtMs = System.currentTimeMillis(),
@@ -250,19 +231,29 @@ class ScreenRecordService : Service() {
                 width = meta.width,
                 height = meta.height,
                 videoPath = file.absolutePath,
-                mouseSamples = finalMouseSamples,
-                keyboardIntervals = keyboardIntervals,
                 editPlan = AiEditPlan(
-                    summary = "Recorded ${actualDuration / 1000}s • ${autoZooms.size} zoom keyframes • ${keyboardIntervals.size} keyboard spans",
-                    segments = initialSegments.ifEmpty {
-                        listOf(EditSegment(0L, actualDuration, 1.0f, SegmentAction.KEEP, "Full recording"))
-                    },
-                    zoomKeyframes = autoZooms,
-                    keyboardIntervals = keyboardIntervals
-                ),
-                styleConfig = style
+                    suggestedTitle = "Recording $stamp",
+                    summary = "Raw screen recording (${actualDuration / 1000}s). Ready for Claude AI edit plan.",
+                    segments = listOf(EditSegment(0L, actualDuration, 1.0f, SegmentAction.KEEP, "Full recording"))
+                )
             )
-            app.projectRepository.saveProject(project)
+
+            val projectDir = app.projectRepository.getProjectDir(projectId)
+            val sheetResult = ContactSheetEngine.generateContactSheet(
+                context = applicationContext,
+                project = initialProject,
+                projectDir = projectDir,
+                intervalSec = settings.contactSheetIntervalSec,
+                maxFramesLimit = settings.maxKeyframes
+            )
+
+            val finalProject = initialProject.copy(
+                contactSheetPdfPath = sheetResult.pdfPath,
+                contactSheetZipPath = sheetResult.zipPath,
+                keyframes = sheetResult.frames
+            )
+
+            app.projectRepository.saveProject(finalProject)
             ActiveSessionTracker.markSavedProject(projectId)
 
             stopForeground(STOP_FOREGROUND_REMOVE)
@@ -304,11 +295,11 @@ class ScreenRecordService : Service() {
         )
         return NotificationCompat.Builder(this, RecordlyApp.CHANNEL_RECORDING)
             .setSmallIcon(R.drawable.ic_launcher_foreground)
-            .setContentTitle("Recordly Mobile Studio")
+            .setContentTitle("Recordly Studio")
             .setContentText(content)
             .setOngoing(true)
             .setContentIntent(openIntent)
-            .addAction(0, "Stop & Edit", stopIntent)
+            .addAction(0, "Stop & Generate Sheet", stopIntent)
             .build()
     }
 

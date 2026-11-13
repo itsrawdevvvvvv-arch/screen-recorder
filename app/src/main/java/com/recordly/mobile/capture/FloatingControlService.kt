@@ -39,7 +39,6 @@ class FloatingControlService : Service() {
     private var timerText: TextView? = null
     private var pauseBtn: TextView? = null
     private var statusDot: View? = null
-    private var keyboardTipPill: TextView? = null
 
     override fun onBind(intent: Intent?): IBinder? = null
 
@@ -73,47 +72,47 @@ class FloatingControlService : Service() {
         val pill = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
-            setPadding(24, 12, 12, 12)
+            setPadding(22, 12, 12, 12)
             background = GradientDrawable().apply {
                 shape = GradientDrawable.RECTANGLE
                 cornerRadius = 100f
-                setColor(Color.parseColor("#E6141824"))
-                setStroke(2, Color.parseColor("#6C5CE7"))
+                setColor(Color.parseColor("#F217191D")) // Dark Card
+                setStroke(2, Color.parseColor("#40DCC9A9")) // Warm Sand border
             }
-            elevation = 20f
+            elevation = 18f
         }
 
         val dot = View(this).apply {
-            val size = 24
+            val size = 20
             layoutParams = LinearLayout.LayoutParams(size, size).apply {
-                marginEnd = 16
+                marginEnd = 14
             }
             background = GradientDrawable().apply {
                 shape = GradientDrawable.OVAL
-                setColor(Color.parseColor("#FF4757"))
+                setColor(Color.parseColor("#B83A2D")) // Terracotta
             }
         }
         statusDot = dot
 
         val timer = TextView(this).apply {
             text = "00:00"
-            textSize = 14f
+            textSize = 13.5f
             typeface = Typeface.MONOSPACE
             setTypeface(typeface, Typeface.BOLD)
-            setTextColor(Color.parseColor("#F1F5F9"))
-            setPadding(0, 0, 18, 0)
+            setTextColor(Color.parseColor("#F8FAFC"))
+            setPadding(0, 0, 16, 0)
         }
         timerText = timer
 
         val pause = TextView(this).apply {
             text = "Pause"
-            textSize = 12f
+            textSize = 11.5f
             setTypeface(Typeface.DEFAULT, Typeface.BOLD)
-            setTextColor(Color.parseColor("#E2E8F0"))
-            setPadding(22, 12, 22, 12)
+            setTextColor(Color.parseColor("#DCC9A9")) // Warm sand
+            setPadding(20, 10, 20, 10)
             background = GradientDrawable().apply {
                 cornerRadius = 60f
-                setColor(Color.parseColor("#1AFFFFFF"))
+                setColor(Color.parseColor("#22262E"))
             }
             setOnClickListener {
                 val action = if (ActiveSessionTracker.isPaused.value) {
@@ -128,19 +127,19 @@ class FloatingControlService : Service() {
 
         val stop = TextView(this).apply {
             text = "■ Stop"
-            textSize = 12.5f
+            textSize = 12f
             setTypeface(Typeface.DEFAULT, Typeface.BOLD)
             setTextColor(Color.WHITE)
-            setPadding(24, 12, 24, 12)
+            setPadding(22, 10, 22, 10)
             layoutParams = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.WRAP_CONTENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT
             ).apply {
-                marginStart = 12
+                marginStart = 10
             }
             background = GradientDrawable().apply {
                 cornerRadius = 60f
-                setColor(Color.parseColor("#FF4757"))
+                setColor(Color.parseColor("#B83A2D")) // Terracotta
             }
             setOnClickListener {
                 startService(
@@ -151,104 +150,95 @@ class FloatingControlService : Service() {
             }
         }
 
-        val kbTip = TextView(this).apply {
-            text = "⌨ Keyboard detected · marked for auto-trim"
-            textSize = 11f
-            setTypeface(Typeface.DEFAULT, Typeface.BOLD)
-            setTextColor(Color.parseColor("#FFA502"))
-            setPadding(20, 10, 20, 10)
-            visibility = View.GONE
-            layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.WRAP_CONTENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT
-            ).apply {
-                topMargin = 10
-            }
-            background = GradientDrawable().apply {
-                cornerRadius = 24f
-                setColor(Color.parseColor("#F0141824"))
-                setStroke(2, Color.parseColor("#8CFFa502"))
-            }
-        }
-        keyboardTipPill = kbTip
-
         pill.addView(dot)
         pill.addView(timer)
         pill.addView(pause)
         pill.addView(stop)
         wrapper.addView(pill)
-        wrapper.addView(kbTip)
 
-        val layoutParams = WindowManager.LayoutParams(
+        val layoutType = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
+        } else {
+            @Suppress("DEPRECATION")
+            WindowManager.LayoutParams.TYPE_PHONE
+        }
+
+        val params = WindowManager.LayoutParams(
             WindowManager.LayoutParams.WRAP_CONTENT,
             WindowManager.LayoutParams.WRAP_CONTENT,
-            WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
-            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE,
+            layoutType,
+            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
+                WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,
             PixelFormat.TRANSLUCENT
         ).apply {
             gravity = Gravity.TOP or Gravity.START
-            x = 32
-            y = 140
+            x = 60
+            y = 180
         }
 
-        var initialX = 0
-        var initialY = 0
-        var initialTouchX = 0f
-        var initialTouchY = 0f
+        pill.setOnTouchListener(object : View.OnTouchListener {
+            private var initialX = 0
+            private var initialY = 0
+            private var initialTouchX = 0f
+            private var initialTouchY = 0f
+            private var isDragging = false
 
-        pill.setOnTouchListener { _, event ->
-            when (event.action) {
-                MotionEvent.ACTION_DOWN -> {
-                    initialX = layoutParams.x
-                    initialY = layoutParams.y
-                    initialTouchX = event.rawX
-                    initialTouchY = event.rawY
-                    true
+            override fun onTouch(v: View?, event: MotionEvent): Boolean {
+                when (event.action) {
+                    MotionEvent.ACTION_DOWN -> {
+                        initialX = params.x
+                        initialY = params.y
+                        initialTouchX = event.rawX
+                        initialTouchY = event.rawY
+                        isDragging = false
+                        return false
+                    }
+                    MotionEvent.ACTION_MOVE -> {
+                        val dx = (event.rawX - initialTouchX).toInt()
+                        val dy = (event.rawY - initialTouchY).toInt()
+                        if (kotlin.math.hypot(dx.toDouble(), dy.toDouble()) > 10.0) {
+                            isDragging = true
+                            params.x = initialX + dx
+                            params.y = initialY + dy
+                            windowManager?.updateViewLayout(wrapper, params)
+                            return true
+                        }
+                    }
+                    MotionEvent.ACTION_UP -> {
+                        if (isDragging) return true
+                    }
                 }
-                MotionEvent.ACTION_MOVE -> {
-                    layoutParams.x = initialX + (event.rawX - initialTouchX).toInt()
-                    layoutParams.y = initialY + (event.rawY - initialTouchY).toInt()
-                    runCatching { windowManager?.updateViewLayout(wrapper, layoutParams) }
-                    true
-                }
-                else -> false
+                return false
             }
-        }
+        })
 
+        windowManager?.addView(wrapper, params)
         rootWrapper = wrapper
-        windowManager?.addView(wrapper, layoutParams)
 
+        observeSessionState()
+    }
+
+    private fun observeSessionState() {
         scope.launch {
             combine(
                 ActiveSessionTracker.isRecording,
                 ActiveSessionTracker.isPaused,
-                ActiveSessionTracker.elapsedMs,
-                ActiveSessionTracker.isKeyboardCurrentlyVisible
-            ) { recording, paused, elapsed, kbVisible ->
-                QuadState(recording, paused, elapsed, kbVisible)
-            }.collect { st ->
-                val secs = (st.elapsed / 1000L).toInt()
+                ActiveSessionTracker.elapsedMs
+            ) { rec, paused, elapsed ->
+                Triple(rec, paused, elapsed)
+            }.collect { (rec, paused, elapsed) ->
+                val secs = (elapsed / 1000L).toInt()
                 timerText?.text = String.format(Locale.US, "%02d:%02d", secs / 60, secs % 60)
-                pauseBtn?.text = if (st.paused) "▶ Resume" else "❚❚ Pause"
-                pauseBtn?.visibility = if (st.recording) View.VISIBLE else View.GONE
-                keyboardTipPill?.visibility = if (st.recording && st.kbVisible) View.VISIBLE else View.GONE
+                pauseBtn?.text = if (paused) "▶ Resume" else "❚❚ Pause"
                 val dotColor = when {
-                    st.kbVisible -> Color.parseColor("#FFA502")
-                    st.paused -> Color.parseColor("#6B7280")
-                    st.recording -> Color.parseColor("#FF4757")
-                    else -> Color.parseColor("#00D2A0")
+                    paused -> Color.parseColor("#9DA3AE")
+                    rec -> Color.parseColor("#B83A2D") // Terracotta
+                    else -> Color.parseColor("#4E6851") // Forest Sage
                 }
                 (statusDot?.background as? GradientDrawable)?.setColor(dotColor)
             }
         }
     }
-
-    private data class QuadState(
-        val recording: Boolean,
-        val paused: Boolean,
-        val elapsed: Long,
-        val kbVisible: Boolean
-    )
 
     private fun buildNotification(): Notification {
         val intent = PendingIntent.getActivity(
@@ -260,7 +250,7 @@ class FloatingControlService : Service() {
         return NotificationCompat.Builder(this, RecordlyApp.CHANNEL_RECORDING)
             .setSmallIcon(R.drawable.ic_launcher_foreground)
             .setContentTitle("Recordly Floating Studio")
-            .setContentText("Floating recorder overlay active")
+            .setContentText("Floating recording controls active")
             .setContentIntent(intent)
             .build()
     }

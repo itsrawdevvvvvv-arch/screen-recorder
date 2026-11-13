@@ -4,7 +4,6 @@ import android.app.Application
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.os.Build
-import com.recordly.mobile.capture.MouseDeviceMonitor
 import com.recordly.mobile.data.ProjectRepository
 import com.recordly.mobile.data.SettingsRepository
 
@@ -13,15 +12,12 @@ class RecordlyApp : Application() {
         private set
     lateinit var projectRepository: ProjectRepository
         private set
-    lateinit var mouseDeviceMonitor: MouseDeviceMonitor
-        private set
 
     override fun onCreate() {
         super.onCreate()
         instance = this
         settingsRepository = SettingsRepository(this)
         projectRepository = ProjectRepository(this)
-        mouseDeviceMonitor = MouseDeviceMonitor(this)
         createNotificationChannels()
     }
 
@@ -37,10 +33,10 @@ class RecordlyApp : Application() {
             }
             val exportChannel = NotificationChannel(
                 CHANNEL_EXPORT,
-                "Video Export & AI Sync",
+                "Video Export & Contact Sheet",
                 NotificationManager.IMPORTANCE_DEFAULT
             ).apply {
-                description = "Groq AI processing and MP4 export progress"
+                description = "Contact sheet generation and MP4 export progress"
             }
             manager.createNotificationChannel(recordChannel)
             manager.createNotificationChannel(exportChannel)

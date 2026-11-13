@@ -20,19 +20,17 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
+import androidx.compose.material.icons.automirrored.rounded.ArrowForward
+import androidx.compose.material.icons.rounded.AutoAwesome
 import androidx.compose.material.icons.rounded.Check
-import androidx.compose.material.icons.rounded.Key
-import androidx.compose.material.icons.rounded.Keyboard
-import androidx.compose.material.icons.rounded.Memory
-import androidx.compose.material.icons.rounded.Mouse
+import androidx.compose.material.icons.rounded.Layers
+import androidx.compose.material.icons.rounded.Mic
 import androidx.compose.material.icons.rounded.Save
+import androidx.compose.material.icons.rounded.Videocam
 import androidx.compose.material.icons.rounded.Visibility
 import androidx.compose.material.icons.rounded.VisibilityOff
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Slider
 import androidx.compose.material3.SliderDefaults
@@ -45,6 +43,8 @@ import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -54,27 +54,23 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.text.SpanStyle
-import androidx.compose.ui.text.TextStyle
-import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.input.PasswordVisualTransformation
-import androidx.compose.ui.text.input.VisualTransformation
-import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import com.recordly.mobile.model.KeyboardTrimMode
-import com.recordly.mobile.ui.theme.StudioAccent
+import com.recordly.mobile.model.AppSettings
+import com.recordly.mobile.ui.theme.ForestSage
 import com.recordly.mobile.ui.theme.StudioBg
 import com.recordly.mobile.ui.theme.StudioBorder
-import com.recordly.mobile.ui.theme.StudioPrimary
-import com.recordly.mobile.ui.theme.StudioPrimaryBright
 import com.recordly.mobile.ui.theme.StudioSurface
 import com.recordly.mobile.ui.theme.StudioSurfaceElevated
+import com.recordly.mobile.ui.theme.StudioTextMuted
 import com.recordly.mobile.ui.theme.StudioTextPrimary
 import com.recordly.mobile.ui.theme.StudioTextSecondary
+import com.recordly.mobile.ui.theme.Terracotta
+import com.recordly.mobile.ui.theme.WarmSand
+import java.util.Locale
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -82,20 +78,19 @@ fun SettingsScreen(
     viewModel: RecordlyViewModel,
     onBack: () -> Unit
 ) {
-    val saved by viewModel.groqSettings.collectAsStateWithLifecycle()
-    val testResult by viewModel.groqTestResult.collectAsStateWithLifecycle()
+    val savedSettings by viewModel.appSettings.collectAsStateWithLifecycle()
 
-    var draft by remember { mutableStateOf(saved) }
-    var showApiKey by remember { mutableStateOf(false) }
+    var showFloatingMenu by remember { mutableStateOf(savedSettings.showFloatingMenu) }
+    var recordMicrophone by remember { mutableStateOf(savedSettings.recordMicrophone) }
+    var intervalSec by remember { mutableFloatStateOf(savedSettings.contactSheetIntervalSec) }
+    var maxKeyframes by remember { mutableIntStateOf(savedSettings.maxKeyframes) }
 
-    LaunchedEffect(saved) { draft = saved }
-
-    val fieldColors = OutlinedTextFieldDefaults.colors(
-        focusedBorderColor = StudioPrimary,
-        unfocusedBorderColor = StudioTextSecondary.copy(alpha = 0.3f),
-        focusedLabelColor = Color(0xFFB8B0FF),
-        unfocusedLabelColor = StudioTextSecondary
-    )
+    LaunchedEffect(savedSettings) {
+        showFloatingMenu = savedSettings.showFloatingMenu
+        recordMicrophone = savedSettings.recordMicrophone
+        intervalSec = savedSettings.contactSheetIntervalSec
+        maxKeyframes = savedSettings.maxKeyframes
+    }
 
     Scaffold(
         containerColor = StudioBg,
@@ -105,8 +100,8 @@ fun SettingsScreen(
                 navigationIcon = {
                     Surface(
                         modifier = Modifier
-                            .padding(start = 10.dp)
-                            .size(40.dp)
+                            .padding(start = 12.dp)
+                            .size(42.dp)
                             .clip(CircleShape)
                             .clickable(onClick = onBack),
                         color = StudioSurfaceElevated,
@@ -114,55 +109,99 @@ fun SettingsScreen(
                         border = BorderStroke(1.dp, StudioBorder)
                     ) {
                         Box(contentAlignment = Alignment.Center) {
-                            Icon(Icons.AutoMirrored.Rounded.ArrowBack, contentDescription = "Back", tint = StudioTextPrimary)
+                            Icon(
+                                Icons.AutoMirrored.Rounded.ArrowBack,
+                                contentDescription = "Back",
+                                tint = StudioTextPrimary,
+                                modifier = Modifier.size(20.dp)
+                            )
                         }
                     }
                 },
-                title = {}
+                title = {
+                    Column {
+                        Text(
+                            "SETTINGS",
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold,
+                            letterSpacing = 2.sp,
+                            color = ForestSage
+                        )
+                        Text(
+                            "Studio Preferences",
+                            fontSize = 18.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = StudioTextPrimary
+                        )
+                    }
+                }
             )
         },
         bottomBar = {
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .background(Brush.verticalGradient(listOf(Color.Transparent, StudioBg.copy(alpha = 0.95f))))
+                    .background(
+                        Brush.verticalGradient(
+                            listOf(Color.Transparent, StudioBg.copy(alpha = 0.95f), StudioBg)
+                        )
+                    )
                     .padding(16.dp)
             ) {
                 Surface(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(58.dp)
+                        .height(56.dp)
                         .clip(RoundedCornerShape(999.dp))
                         .clickable {
-                            viewModel.saveGroqSettings(draft)
+                            viewModel.updateSettings(
+                                AppSettings(
+                                    showFloatingMenu = showFloatingMenu,
+                                    contactSheetIntervalSec = intervalSec,
+                                    maxKeyframes = maxKeyframes,
+                                    recordMicrophone = recordMicrophone
+                                )
+                            )
                             onBack()
                         },
-                    color = Color.Transparent,
+                    color = Terracotta,
                     shape = RoundedCornerShape(999.dp),
-                    shadowElevation = 12.dp
+                    shadowElevation = 8.dp
                 ) {
-                    Box(
+                    Row(
                         modifier = Modifier
                             .fillMaxSize()
-                            .background(Brush.horizontalGradient(listOf(StudioPrimary, StudioPrimaryBright)))
-                            .padding(horizontal = 8.dp),
-                        contentAlignment = Alignment.Center
+                            .padding(horizontal = 12.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
                     ) {
                         Box(
                             modifier = Modifier
-                                .align(Alignment.CenterStart)
-                                .size(42.dp)
+                                .size(38.dp)
                                 .clip(CircleShape)
-                                .background(Color.White),
+                                .background(Color.Black.copy(alpha = 0.25f)),
                             contentAlignment = Alignment.Center
                         ) {
-                            Icon(Icons.Rounded.Save, contentDescription = null, tint = StudioPrimary, modifier = Modifier.size(20.dp))
+                            Icon(
+                                Icons.Rounded.Save,
+                                contentDescription = null,
+                                tint = Color.White,
+                                modifier = Modifier.size(18.dp)
+                            )
                         }
+
                         Text(
-                            "Save Settings",
+                            "Save Studio Settings",
                             color = Color.White,
                             fontWeight = FontWeight.Bold,
                             fontSize = 15.sp
+                        )
+
+                        Icon(
+                            Icons.AutoMirrored.Rounded.ArrowForward,
+                            contentDescription = null,
+                            tint = Color.White.copy(alpha = 0.8f),
+                            modifier = Modifier.size(18.dp)
                         )
                     }
                 }
@@ -173,254 +212,326 @@ fun SettingsScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(padding),
-            contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 20.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
+            contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 28.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
+            // Bento Header 01: Recording Menu & Capture
             item {
-                Text(
-                    text = buildAnnotatedString {
-                        withStyle(
-                            SpanStyle(
-                                brush = Brush.horizontalGradient(listOf(StudioPrimaryBright, StudioAccent)),
-                                fontWeight = FontWeight.ExtraBold
-                            )
-                        ) { append("Groq AI") }
-                        withStyle(SpanStyle(color = StudioTextPrimary, fontWeight = FontWeight.ExtraBold)) {
-                            append(" & Capture Settings")
-                        }
-                    },
-                    fontSize = 27.sp,
-                    lineHeight = 31.sp,
-                    modifier = Modifier.padding(horizontal = 4.dp, vertical = 4.dp)
-                )
-            }
-
-            // 1. Groq API Key Card
-            item {
-                SettingsCard(icon = Icons.Rounded.Key, title = "GROQ API CONFIGURATION") {
-                    OutlinedTextField(
-                        value = draft.apiKey,
-                        onValueChange = { draft = draft.copy(apiKey = it) },
-                        label = { Text("Groq API Key (gsk_...)") },
-                        visualTransformation = if (showApiKey) VisualTransformation.None else PasswordVisualTransformation(),
-                        singleLine = true,
-                        textStyle = TextStyle(fontFamily = FontFamily.Monospace, fontSize = 13.sp),
-                        trailingIcon = {
-                            IconButton(onClick = { showApiKey = !showApiKey }) {
-                                Icon(
-                                    if (showApiKey) Icons.Rounded.VisibilityOff else Icons.Rounded.Visibility,
-                                    contentDescription = "Toggle key visibility",
-                                    tint = StudioTextSecondary
-                                )
-                            }
-                        },
-                        shape = RoundedCornerShape(14.dp),
-                        colors = fieldColors,
-                        modifier = Modifier.fillMaxWidth()
-                    )
-
-                    Spacer(Modifier.height(12.dp))
-
+                SettingsSectionCard(
+                    number = "01",
+                    title = "RECORDING & OVERLAY",
+                    badge = if (showFloatingMenu) "MENU: VISIBLE" else "MENU: HIDDEN",
+                    badgeColor = if (showFloatingMenu) ForestSage else Terracotta
+                ) {
+                    // Floating Menu Toggle
                     Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(16.dp))
+                            .background(StudioSurfaceElevated)
+                            .padding(14.dp),
                         verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(12.dp)
+                        horizontalArrangement = Arrangement.SpaceBetween
                     ) {
-                        Surface(
-                            modifier = Modifier
-                                .height(40.dp)
-                                .clip(RoundedCornerShape(999.dp))
-                                .clickable { viewModel.testGroqConnection(draft.apiKey) },
-                            color = Color.Transparent,
-                            shape = RoundedCornerShape(999.dp),
-                            border = BorderStroke(1.5.dp, StudioPrimary)
+                        Row(
+                            modifier = Modifier.weight(1f),
+                            verticalAlignment = Alignment.CenterVertically
                         ) {
                             Box(
-                                modifier = Modifier.padding(horizontal = 18.dp),
+                                modifier = Modifier
+                                    .size(38.dp)
+                                    .clip(CircleShape)
+                                    .background(if (showFloatingMenu) WarmSand else StudioBorder),
                                 contentAlignment = Alignment.Center
                             ) {
-                                Text("Test Key", color = Color(0xFFC4BEFF), fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                                Icon(
+                                    if (showFloatingMenu) Icons.Rounded.Visibility else Icons.Rounded.VisibilityOff,
+                                    contentDescription = null,
+                                    tint = if (showFloatingMenu) StudioBg else StudioTextMuted,
+                                    modifier = Modifier.size(18.dp)
+                                )
+                            }
+                            Spacer(Modifier.width(12.dp))
+                            Column {
+                                Text(
+                                    "Floating Recording Menu",
+                                    fontSize = 14.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = StudioTextPrimary
+                                )
+                                Text(
+                                    if (showFloatingMenu)
+                                        "Draggable control pill appears over apps"
+                                    else
+                                        "Record quietly; stop via notification bar",
+                                    fontSize = 12.sp,
+                                    color = StudioTextSecondary
+                                )
                             }
                         }
 
-                        testResult?.let { msg ->
-                            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
-                                Icon(Icons.Rounded.Check, contentDescription = null, tint = StudioAccent, modifier = Modifier.size(16.dp))
-                                Spacer(Modifier.width(5.dp))
-                                Text(msg, fontSize = 12.sp, fontWeight = FontWeight.Bold, color = StudioAccent)
-                            }
-                        }
-                    }
-                }
-            }
-
-            // 2. AI Models Card
-            item {
-                SettingsCard(icon = Icons.Rounded.Memory, title = "AI MODELS") {
-                    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                        OutlinedTextField(
-                            value = draft.whisperModel,
-                            onValueChange = { draft = draft.copy(whisperModel = it) },
-                            label = { Text("Whisper Model (.srt & word timestamps)") },
-                            singleLine = true,
-                            textStyle = TextStyle(fontFamily = FontFamily.Monospace, fontSize = 13.sp),
-                            shape = RoundedCornerShape(14.dp),
-                            colors = fieldColors,
-                            modifier = Modifier.fillMaxWidth()
-                        )
-                        OutlinedTextField(
-                            value = draft.chatModel,
-                            onValueChange = { draft = draft.copy(chatModel = it) },
-                            label = { Text("AI Director Chat Model") },
-                            singleLine = true,
-                            textStyle = TextStyle(fontFamily = FontFamily.Monospace, fontSize = 13.sp),
-                            shape = RoundedCornerShape(14.dp),
-                            colors = fieldColors,
-                            modifier = Modifier.fillMaxWidth()
-                        )
-                        OutlinedTextField(
-                            value = draft.visionModel,
-                            onValueChange = { draft = draft.copy(visionModel = it) },
-                            label = { Text("Vision Keyframe Model") },
-                            singleLine = true,
-                            textStyle = TextStyle(fontFamily = FontFamily.Monospace, fontSize = 13.sp),
-                            shape = RoundedCornerShape(14.dp),
-                            colors = fieldColors,
-                            modifier = Modifier.fillMaxWidth()
+                        Switch(
+                            checked = showFloatingMenu,
+                            onCheckedChange = { showFloatingMenu = it },
+                            colors = SwitchDefaults.colors(
+                                checkedThumbColor = StudioBg,
+                                checkedTrackColor = WarmSand,
+                                uncheckedThumbColor = StudioTextMuted,
+                                uncheckedTrackColor = StudioBorder
+                            )
                         )
                     }
-                }
-            }
 
-            // 3. Phone Keyboard Auto-Trim Mode Card
-            item {
-                SettingsCard(icon = Icons.Rounded.Keyboard, title = "PHONE KEYBOARD AUTO-TRIM MODE") {
+                    Spacer(Modifier.height(10.dp))
+
+                    // Microphone audio toggle
                     Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(16.dp))
+                            .background(StudioSurfaceElevated)
+                            .padding(14.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
                     ) {
-                        KeyboardTrimMode.entries.forEach { mode ->
-                            val selected = draft.keyboardTrimMode == mode
-                            Surface(
+                        Row(
+                            modifier = Modifier.weight(1f),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Box(
                                 modifier = Modifier
-                                    .weight(1f)
-                                    .height(40.dp)
-                                    .clip(RoundedCornerShape(12.dp))
-                                    .clickable { draft = draft.copy(keyboardTrimMode = mode) },
-                                color = if (selected) StudioPrimary.copy(alpha = 0.24f) else StudioSurfaceElevated,
-                                shape = RoundedCornerShape(12.dp),
-                                border = BorderStroke(1.dp, if (selected) StudioPrimary else StudioTextSecondary.copy(alpha = 0.28f))
+                                    .size(38.dp)
+                                    .clip(CircleShape)
+                                    .background(if (recordMicrophone) Terracotta else StudioBorder),
+                                contentAlignment = Alignment.Center
                             ) {
-                                Row(
-                                    modifier = Modifier.fillMaxSize(),
-                                    horizontalArrangement = Arrangement.Center,
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    if (selected) {
-                                        Icon(Icons.Rounded.Check, contentDescription = null, tint = Color.White, modifier = Modifier.size(15.dp))
-                                        Spacer(Modifier.width(4.dp))
-                                    }
-                                    Text(
-                                        when (mode) {
-                                            KeyboardTrimMode.REMOVE -> "Remove"
-                                            KeyboardTrimMode.SPEED_UP_5X -> "Speed 5x"
-                                            KeyboardTrimMode.KEEP -> "Keep"
-                                        },
-                                        fontSize = 12.5.sp,
-                                        fontWeight = FontWeight.SemiBold,
-                                        color = if (selected) Color.White else StudioTextPrimary
-                                    )
-                                }
+                                Icon(
+                                    Icons.Rounded.Mic,
+                                    contentDescription = null,
+                                    tint = Color.White,
+                                    modifier = Modifier.size(18.dp)
+                                )
                             }
+                            Spacer(Modifier.width(12.dp))
+                            Column {
+                                Text(
+                                    "Record Microphone",
+                                    fontSize = 14.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = StudioTextPrimary
+                                )
+                                Text(
+                                    "Capture voiceover while screen recording",
+                                    fontSize = 12.sp,
+                                    color = StudioTextSecondary
+                                )
+                            }
+                        }
+
+                        Switch(
+                            checked = recordMicrophone,
+                            onCheckedChange = { recordMicrophone = it },
+                            colors = SwitchDefaults.colors(
+                                checkedThumbColor = Color.White,
+                                checkedTrackColor = Terracotta,
+                                uncheckedThumbColor = StudioTextMuted,
+                                uncheckedTrackColor = StudioBorder
+                            )
+                        )
+                    }
+                }
+            }
+
+            // Bento Header 02: Contact Sheet Extraction
+            item {
+                SettingsSectionCard(
+                    number = "02",
+                    title = "CONTACT SHEET & STORYBOARD",
+                    badge = "AI READY",
+                    badgeColor = WarmSand
+                ) {
+                    // Frame Interval Slider
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(16.dp))
+                            .background(StudioSurfaceElevated)
+                            .padding(14.dp)
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column {
+                                Text(
+                                    "Sample Frame Interval",
+                                    fontSize = 14.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = StudioTextPrimary
+                                )
+                                Text(
+                                    "Capture 1 frame every ${String.format(Locale.US, "%.1f", intervalSec)}s",
+                                    fontSize = 12.sp,
+                                    color = WarmSand
+                                )
+                            }
+
+                            Surface(
+                                shape = RoundedCornerShape(8.dp),
+                                color = WarmSand.copy(alpha = 0.15f),
+                                border = BorderStroke(1.dp, WarmSand.copy(alpha = 0.3f))
+                            ) {
+                                Text(
+                                    "${String.format(Locale.US, "%.1f", intervalSec)}s",
+                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = WarmSand
+                                )
+                            }
+                        }
+
+                        Spacer(Modifier.height(8.dp))
+
+                        Slider(
+                            value = intervalSec,
+                            onValueChange = { intervalSec = (it * 10).toInt() / 10f },
+                            valueRange = 0.5f..3.0f,
+                            steps = 24,
+                            colors = SliderDefaults.colors(
+                                thumbColor = WarmSand,
+                                activeTrackColor = WarmSand,
+                                inactiveTrackColor = StudioBorder
+                            )
+                        )
+
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Text("0.5s (Dense)", fontSize = 10.sp, color = StudioTextMuted)
+                            Text("1.5s (Recommended)", fontSize = 10.sp, color = StudioTextMuted)
+                            Text("3.0s (Sparse)", fontSize = 10.sp, color = StudioTextMuted)
                         }
                     }
 
                     Spacer(Modifier.height(10.dp))
-                    Text(
-                        when (draft.keyboardTrimMode) {
-                            KeyboardTrimMode.REMOVE -> "Detected keyboard frames are cut from the final video."
-                            KeyboardTrimMode.SPEED_UP_5X -> "Keyboard frames are kept but played back at 5x speed."
-                            KeyboardTrimMode.KEEP -> "Keyboard frames are left untouched in the timeline."
-                        },
-                        fontSize = 11.5.sp,
-                        color = StudioTextSecondary
-                    )
-                }
-            }
 
-            // 4. Auto-Zoom Scale Card
-            item {
-                SettingsCard(icon = Icons.Rounded.Mouse, title = "POST-RECORDING AUTO-ZOOM") {
-                    Text(
-                        "Default Auto-Zoom Scale (${"%.1f".format(draft.defaultZoomScale)}x)",
-                        fontSize = 14.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = StudioTextPrimary
-                    )
-                    Spacer(Modifier.height(6.dp))
-                    Slider(
-                        value = draft.defaultZoomScale,
-                        onValueChange = { draft = draft.copy(defaultZoomScale = it) },
-                        valueRange = 1.3f..2.8f,
-                        colors = SliderDefaults.colors(
-                            thumbColor = Color.White,
-                            activeTrackColor = StudioPrimary,
-                            inactiveTrackColor = Color(0xFF2A3144)
-                        )
-                    )
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween
+                    // Max Keyframes limit selector
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(16.dp))
+                            .background(StudioSurfaceElevated)
+                            .padding(14.dp)
                     ) {
-                        Text("1.3x", fontSize = 10.5.sp, fontWeight = FontWeight.Bold, color = StudioTextSecondary)
-                        Text("2.0x", fontSize = 10.5.sp, fontWeight = FontWeight.Bold, color = StudioTextSecondary)
-                        Text("2.8x", fontSize = 10.5.sp, fontWeight = FontWeight.Bold, color = StudioTextSecondary)
+                        Text(
+                            "Max Storyboard Keyframes",
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = StudioTextPrimary
+                        )
+                        Text(
+                            "Maximum thumbnails generated for PDF & ZIP",
+                            fontSize = 12.sp,
+                            color = StudioTextSecondary
+                        )
+
+                        Spacer(Modifier.height(12.dp))
+
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            listOf(12, 18, 24, 36).forEach { count ->
+                                val selected = maxKeyframes == count
+                                Surface(
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .height(38.dp)
+                                        .clip(RoundedCornerShape(10.dp))
+                                        .clickable { maxKeyframes = count },
+                                    color = if (selected) ForestSage else StudioBg,
+                                    shape = RoundedCornerShape(10.dp),
+                                    border = BorderStroke(
+                                        1.dp,
+                                        if (selected) ForestSage else StudioBorder
+                                    )
+                                ) {
+                                    Box(
+                                        contentAlignment = Alignment.Center,
+                                        modifier = Modifier.fillMaxSize()
+                                    ) {
+                                        Text(
+                                            "$count",
+                                            fontWeight = FontWeight.Bold,
+                                            fontSize = 13.sp,
+                                            color = if (selected) Color.White else StudioTextSecondary
+                                        )
+                                    }
+                                }
+                            }
+                        }
                     }
                 }
             }
 
-            // 5. Switches Card
+            // Bento Header 03: Offline Claude AI Protocol Guide
             item {
                 Surface(
                     color = StudioSurface,
-                    shape = RoundedCornerShape(20.dp),
-                    border = BorderStroke(1.dp, StudioBorder)
+                    shape = RoundedCornerShape(22.dp),
+                    border = BorderStroke(1.dp, StudioBorder),
+                    modifier = Modifier.fillMaxWidth()
                 ) {
-                    Column(Modifier.padding(16.dp)) {
+                    Column(Modifier.padding(18.dp)) {
                         Row(
-                            modifier = Modifier.fillMaxWidth(),
                             verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.SpaceBetween
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            modifier = Modifier.fillMaxWidth()
                         ) {
-                            Column(Modifier.weight(1f).padding(end = 12.dp)) {
-                                Text("Auto-Zoom on Mouse Clicks", fontWeight = FontWeight.Bold, fontSize = 14.sp, color = StudioTextPrimary)
-                                Text("Generates smooth zoom keyframes automatically", fontSize = 11.5.sp, color = StudioTextSecondary)
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text(
+                                    "03",
+                                    fontSize = 18.sp,
+                                    fontWeight = FontWeight.ExtraBold,
+                                    color = ForestSage
+                                )
+                                Spacer(Modifier.width(8.dp))
+                                Text(
+                                    "ZERO-API CLAUDE WORKFLOW",
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.ExtraBold,
+                                    letterSpacing = 1.sp,
+                                    color = StudioTextSecondary
+                                )
                             }
-                            Switch(
-                                checked = draft.autoZoomEnabled,
-                                onCheckedChange = { draft = draft.copy(autoZoomEnabled = it) },
-                                colors = SwitchDefaults.colors(checkedThumbColor = Color.White, checkedTrackColor = StudioPrimary)
+                            Icon(
+                                Icons.Rounded.AutoAwesome,
+                                contentDescription = null,
+                                tint = WarmSand,
+                                modifier = Modifier.size(16.dp)
                             )
                         }
 
-                        Spacer(Modifier.height(14.dp))
-                        Box(Modifier.fillMaxWidth().height(1.dp).background(StudioBorder))
-                        Spacer(Modifier.height(14.dp))
+                        Spacer(Modifier.height(12.dp))
 
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.SpaceBetween
-                        ) {
-                            Column(Modifier.weight(1f).padding(end = 12.dp)) {
-                                Text("Record Microphone Audio", fontWeight = FontWeight.Bold, fontSize = 14.sp, color = StudioTextPrimary)
-                                Text("Used by Groq Whisper to generate .srt & match speed", fontSize = 11.5.sp, color = StudioTextSecondary)
-                            }
-                            Switch(
-                                checked = draft.recordMicrophone,
-                                onCheckedChange = { draft = draft.copy(recordMicrophone = it) },
-                                colors = SwitchDefaults.colors(checkedThumbColor = Color.White, checkedTrackColor = StudioPrimary)
-                            )
-                        }
+                        WorkflowStep(
+                            step = "1",
+                            title = "Capture Screen",
+                            description = "Record any mobile workflow, demo, or tutorial."
+                        )
+                        WorkflowStep(
+                            step = "2",
+                            title = "Export Contact Sheet & Prompt",
+                            description = "Tap 'Copy AI Prompt' and share the ZIP or PDF with Claude AI."
+                        )
+                        WorkflowStep(
+                            step = "3",
+                            title = "Paste Claude's Response",
+                            description = "Paste the JSON response into Recordly to instantly execute trims and dynamic zoom keyframes."
+                        )
                     }
                 }
             }
@@ -429,30 +540,103 @@ fun SettingsScreen(
 }
 
 @Composable
-private fun SettingsCard(
-    icon: ImageVector,
+private fun SettingsSectionCard(
+    number: String,
     title: String,
+    badge: String,
+    badgeColor: Color,
     content: @Composable () -> Unit
 ) {
     Surface(
         color = StudioSurface,
-        shape = RoundedCornerShape(20.dp),
-        border = BorderStroke(1.dp, StudioBorder)
+        shape = RoundedCornerShape(22.dp),
+        border = BorderStroke(1.dp, StudioBorder),
+        modifier = Modifier.fillMaxWidth()
     ) {
         Column(Modifier.padding(16.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(icon, contentDescription = null, tint = StudioPrimaryBright, modifier = Modifier.size(16.dp))
-                Spacer(Modifier.width(8.dp))
-                Text(
-                    title,
-                    fontSize = 11.sp,
-                    letterSpacing = 1.sp,
-                    fontWeight = FontWeight.ExtraBold,
-                    color = StudioTextSecondary
-                )
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        number,
+                        fontSize = 18.sp,
+                        fontWeight = FontWeight.ExtraBold,
+                        color = badgeColor
+                    )
+                    Spacer(Modifier.width(8.dp))
+                    Text(
+                        title,
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.ExtraBold,
+                        letterSpacing = 1.sp,
+                        color = StudioTextSecondary
+                    )
+                }
+
+                Surface(
+                    shape = RoundedCornerShape(999.dp),
+                    color = badgeColor.copy(alpha = 0.15f),
+                    border = BorderStroke(1.dp, badgeColor.copy(alpha = 0.3f))
+                ) {
+                    Text(
+                        badge,
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = badgeColor
+                    )
+                }
             }
+
             Spacer(Modifier.height(14.dp))
             content()
+        }
+    }
+}
+
+@Composable
+private fun WorkflowStep(
+    step: String,
+    title: String,
+    description: String
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 4.dp),
+        verticalAlignment = Alignment.Top
+    ) {
+        Box(
+            modifier = Modifier
+                .size(24.dp)
+                .clip(CircleShape)
+                .background(ForestSage.copy(alpha = 0.2f)),
+            contentAlignment = Alignment.Center
+        ) {
+            Text(
+                step,
+                fontSize = 11.sp,
+                fontWeight = FontWeight.Bold,
+                color = ForestSage
+            )
+        }
+        Spacer(Modifier.width(10.dp))
+        Column {
+            Text(
+                title,
+                fontSize = 13.sp,
+                fontWeight = FontWeight.Bold,
+                color = StudioTextPrimary
+            )
+            Text(
+                description,
+                fontSize = 11.5.sp,
+                color = StudioTextSecondary,
+                lineHeight = 15.sp
+            )
         }
     }
 }

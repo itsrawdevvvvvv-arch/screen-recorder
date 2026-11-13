@@ -54,7 +54,8 @@ class MainActivity : ComponentActivity() {
             }
             ContextCompat.startForegroundService(this, recordIntent)
 
-            if (Settings.canDrawOverlays(this)) {
+            val showMenu = viewModel.appSettings.value.showFloatingMenu
+            if (showMenu && Settings.canDrawOverlays(this)) {
                 ContextCompat.startForegroundService(
                     this,
                     Intent(this, FloatingControlService::class.java)
@@ -76,22 +77,6 @@ class MainActivity : ComponentActivity() {
             activeEditorProjectId = newId
             navigateToEditorCallback?.invoke(newId)
         }
-    }
-
-    private val importSrtLauncher = registerForActivityResult(
-        ActivityResultContracts.OpenDocument()
-    ) { uri ->
-        val pid = activeEditorProjectId ?: return@registerForActivityResult
-        uri ?: return@registerForActivityResult
-        viewModel.importSrt(pid, uri)
-    }
-
-    private val importAudioLauncher = registerForActivityResult(
-        ActivityResultContracts.OpenDocument()
-    ) { uri ->
-        val pid = activeEditorProjectId ?: return@registerForActivityResult
-        uri ?: return@registerForActivityResult
-        viewModel.importExternalAudio(pid, uri)
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -153,9 +138,7 @@ class MainActivity : ComponentActivity() {
                         StudioEditorScreen(
                             projectId = pid,
                             viewModel = viewModel,
-                            onBack = { navController.popBackStack() },
-                            onImportSrt = { importSrtLauncher.launch(arrayOf("*/*")) },
-                            onImportAudio = { importAudioLauncher.launch(arrayOf("audio/*")) }
+                            onBack = { navController.popBackStack() }
                         )
                     }
 
@@ -170,16 +153,12 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    override fun onResume() {
-        super.onResume()
-        viewModel.refreshHardwareAndPermissions()
-    }
-
     private fun requestRecordPermissionsAndStart() {
-        if (!Settings.canDrawOverlays(this)) {
+        val showMenu = viewModel.appSettings.value.showFloatingMenu
+        if (showMenu && !Settings.canDrawOverlays(this)) {
             Toast.makeText(
                 this,
-                "Grant 'Display over other apps' for the floating studio bubble",
+                "Grant 'Display over other apps' to show the floating recording menu, or switch Menu: OFF to record unobtrusively",
                 Toast.LENGTH_LONG
             ).show()
             startActivity(
@@ -188,10 +167,14 @@ class MainActivity : ComponentActivity() {
             return
         }
 
-        val needed = mutableListOf(Manifest.permission.RECORD_AUDIO)
+        val needed = mutableListOf<String>()
+        if (viewModel.appSettings.value.recordMicrophone) {
+            needed += Manifest.permission.RECORD_AUDIO
+        }
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             needed += Manifest.permission.POST_NOTIFICATIONS
         }
+
         val missing = needed.filter {
             ContextCompat.checkSelfPermission(this, it) != PackageManager.PERMISSION_GRANTED
         }

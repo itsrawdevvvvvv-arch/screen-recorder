@@ -8,7 +8,6 @@ import android.os.Build
 import android.os.Environment
 import android.provider.MediaStore
 import com.recordly.mobile.model.RecordingProject
-import com.recordly.mobile.model.SrtCue
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -58,10 +57,6 @@ class ProjectRepository(private val context: Context) {
     suspend fun saveProject(project: RecordingProject) = withContext(Dispatchers.IO) {
         val dir = getProjectDir(project.id)
         File(dir, "project.json").writeText(json.encodeToString(project))
-        if (project.srtCues.isNotEmpty()) {
-            val srtFile = project.srtPath?.let { File(it) } ?: File(dir, "subtitles.srt")
-            srtFile.writeText(SrtCodec.serialize(project.srtCues))
-        }
         reloadProjects()
     }
 
@@ -87,7 +82,7 @@ class ProjectRepository(private val context: Context) {
         val stamp = SimpleDateFormat("MMM dd, HH:mm", Locale.US).format(Date())
         val project = RecordingProject(
             id = id,
-            title = "Imported $stamp",
+            title = "Recording $stamp",
             createdAtMs = System.currentTimeMillis(),
             durationMs = meta.durationMs,
             width = meta.width,
@@ -96,33 +91,6 @@ class ProjectRepository(private val context: Context) {
         )
         saveProject(project)
         project
-    }
-
-    suspend fun importExternalAudio(projectId: String, uri: Uri): RecordingProject? = withContext(Dispatchers.IO) {
-        val project = getProject(projectId) ?: return@withContext null
-        val dir = getProjectDir(projectId)
-        val dest = File(dir, "external_audio.m4a")
-        context.contentResolver.openInputStream(uri)?.use { input ->
-            dest.outputStream().use { output -> input.copyTo(output) }
-        } ?: error("Unable to read selected audio file")
-        val updated = project.copy(externalAudioPath = dest.absolutePath)
-        saveProject(updated)
-        updated
-    }
-
-    suspend fun importSrtFile(projectId: String, uri: Uri): RecordingProject? = withContext(Dispatchers.IO) {
-        val project = getProject(projectId) ?: return@withContext null
-        val rawSrt = context.contentResolver.openInputStream(uri)?.bufferedReader()?.use { it.readText() }
-            ?: error("Unable to read .srt file")
-        val cues = SrtCodec.parse(rawSrt)
-        val dir = getProjectDir(projectId)
-        val srtFile = File(dir, "subtitles.srt").apply { writeText(SrtCodec.serialize(cues)) }
-        val updated = project.copy(
-            srtPath = srtFile.absolutePath,
-            srtCues = cues
-        )
-        saveProject(updated)
-        updated
     }
 
     suspend fun exportVideoToGallery(sourceMp4: File, displayName: String): Uri? = withContext(Dispatchers.IO) {
@@ -148,12 +116,12 @@ class ProjectRepository(private val context: Context) {
         uri
     }
 
-    suspend fun exportSrtToDownloads(cues: List<SrtCue>, displayName: String): Uri? = withContext(Dispatchers.IO) {
+    suspend fun exportFileToDownloads(file: File, displayName: String, mimeType: String): Uri? = withContext(Dispatchers.IO) {
+        if (!file.exists()) return@withContext null
         val resolver = context.contentResolver
-        val srtText = SrtCodec.serialize(cues)
         val values = ContentValues().apply {
-            put(MediaStore.Downloads.DISPLAY_NAME, "$displayName.srt")
-            put(MediaStore.Downloads.MIME_TYPE, "application/x-subrip")
+            put(MediaStore.Downloads.DISPLAY_NAME, displayName)
+            put(MediaStore.Downloads.MIME_TYPE, mimeType)
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
                 put(MediaStore.Downloads.RELATIVE_PATH, "${Environment.DIRECTORY_DOWNLOADS}/Recordly")
                 put(MediaStore.Downloads.IS_PENDING, 1)
@@ -166,7 +134,7 @@ class ProjectRepository(private val context: Context) {
         }
         val uri = resolver.insert(collection, values) ?: return@withContext null
         resolver.openOutputStream(uri)?.use { out ->
-            out.write(srtText.toByteArray(Charsets.UTF_8))
+            file.inputStream().use { it.copyTo(out) }
         }
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             values.clear()
