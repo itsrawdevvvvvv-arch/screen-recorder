@@ -977,7 +977,7 @@ fun StudioEditorPreview(
 ) {
     var positionMs by remember { mutableLongStateOf(0L) }
     LaunchedEffect(exoPlayer) {
-        while (kotlinx.coroutines.isActive) {
+        while (isActive) {
             androidx.compose.runtime.withFrameNanos { }
             positionMs = exoPlayer.currentPosition
         }
